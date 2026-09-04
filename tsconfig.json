@@ -14,5 +14,5 @@
   "include": [
     "**/*.ts",
     "**/*.tsx"
-  ]
+, "src/screens/WelcomeScreen.jsx", "src/screens/LoginScreen.jsx", "src/screens/HomeScreen.jsx", "App.js", "src/screens/TaskDetailsScreen.jsx", "src/screens/PlannerScreen.jsx"  ]
 }
