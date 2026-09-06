@@ -13,25 +13,34 @@ import {
   ScrollView,
 } from 'react-native';
 
+import { useAuth } from '../context/AuthContext';
+
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleLogin = () => {
-    // Check empty fields
-    if (
-      email.trim() === '' ||
-      password.trim() === ''
-    ) {
-      Alert.alert(
-        'Error',
-        'Please fill in all fields.'
-      );
+  const { login } = useAuth();
+
+  const handleLogin = async () => {
+    if (email.trim() === '' || password.trim() === '') {
+      Alert.alert('Error', 'Please fill in all fields.');
       return;
     }
 
-    // Login successful
-    navigation.navigate('HomeScreen');
+    try {
+      const data = await login(email.trim(), password);
+
+      console.log('Login successful:', data);
+
+      navigation.navigate('HomeScreen');
+    } catch (error) {
+      console.log('Login error:', error);
+
+      Alert.alert(
+        'Login Failed',
+        error.message || 'Invalid email or password'
+      );
+    }
   };
 
   return (
@@ -39,7 +48,6 @@ const LoginScreen = ({ navigation }) => {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
@@ -48,7 +56,6 @@ const LoginScreen = ({ navigation }) => {
 
         {/* Title */}
         <View style={styles.titleContainer}>
-
           <Text style={styles.title}>
             Welcome Back
           </Text>
@@ -56,7 +63,6 @@ const LoginScreen = ({ navigation }) => {
           <Text style={styles.subtitle}>
             It's time to be productive
           </Text>
-
         </View>
 
         {/* Login Card */}
@@ -197,17 +203,13 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: '#FFFFFF',
     borderRadius: 30,
-
     paddingHorizontal: 22,
     paddingVertical: 25,
-
     elevation: 4,
-
     shadowOffset: {
       width: 0,
       height: 4,
     },
-
     shadowOpacity: 0.08,
     shadowRadius: 12,
   },
@@ -220,14 +222,10 @@ const styles = StyleSheet.create({
   loginIcon: {
     width: 43,
     height: 43,
-
     borderRadius: 22,
-
     backgroundColor: '#E9DDFF',
-
     justifyContent: 'center',
     alignItems: 'center',
-
     marginRight: 12,
   },
 
@@ -255,9 +253,7 @@ const styles = StyleSheet.create({
 
   divider: {
     height: 1,
-
     backgroundColor: '#D7D7D7',
-
     marginTop: 22,
     marginBottom: 24,
   },
@@ -265,65 +261,46 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 13,
     fontWeight: '700',
-
     color: '#222222',
-
     marginBottom: 8,
   },
 
   inputContainer: {
     height: 48,
-
     backgroundColor: '#DCCEFF',
-
     borderRadius: 9,
-
     flexDirection: 'row',
     alignItems: 'center',
-
     paddingHorizontal: 12,
-
     marginBottom: 18,
   },
 
   inputIcon: {
     fontSize: 16,
-
     marginRight: 8,
-
     opacity: 0.45,
   },
 
   input: {
     flex: 1,
-
     height: '100%',
-
     fontSize: 13,
-
     color: '#333333',
   },
 
   button: {
     height: 53,
-
     backgroundColor: '#5B2DE8',
-
     borderRadius: 11,
-
     marginTop: 22,
-
     flexDirection: 'row',
-
     justifyContent: 'center',
     alignItems: 'center',
-
     elevation: 4,
   },
 
   buttonPressed: {
     opacity: 0.75,
-
     transform: [
       {
         scale: 0.98,
@@ -333,17 +310,13 @@ const styles = StyleSheet.create({
 
   buttonText: {
     color: '#FFFFFF',
-
     fontSize: 15,
-
     fontWeight: '800',
   },
 
   arrow: {
     color: '#FFFFFF',
-
     fontSize: 21,
-
     marginLeft: 15,
   },
 

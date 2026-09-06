@@ -8,40 +8,43 @@ import SignUpScreen from './src/screens/SignUpScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import HomeScreen from './src/screens/HomeScreen';
 
+import { AuthProvider } from './src/context/AuthContext';
+
 const Stack = createNativeStackNavigator();
 
 const App = () => {
   return (
-    <NavigationContainer>
-      <Stack.Navigator
-        initialRouteName="WelcomeScreen"
-        screenOptions={{
-          headerShown: false,
-        }}
-      >
-        <Stack.Screen
-          name="WelcomeScreen"
-          component={WelcomeScreen}
-        />
+    <AuthProvider>
+      <NavigationContainer>
+        <Stack.Navigator
+          initialRouteName="WelcomeScreen"
+          screenOptions={{
+            headerShown: false,
+          }}
+        >
+          <Stack.Screen
+            name="WelcomeScreen"
+            component={WelcomeScreen}
+          />
 
-        <Stack.Screen
-          name="SignUpScreen"
-          component={SignUpScreen}
-        />
+          <Stack.Screen
+            name="SignUpScreen"
+            component={SignUpScreen}
+          />
 
-        <Stack.Screen
-          name="LoginScreen"
-          component={LoginScreen}
-        />
+          <Stack.Screen
+            name="LoginScreen"
+            component={LoginScreen}
+          />
 
-        <Stack.Screen
-          name="HomeScreen"
-          component={HomeScreen}
-        />
-      </Stack.Navigator>
-    </NavigationContainer>
+          <Stack.Screen
+            name="HomeScreen"
+            component={HomeScreen}
+          />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </AuthProvider>
   );
 };
 
 export default App;
-
