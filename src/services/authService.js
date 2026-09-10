@@ -1,32 +1,30 @@
-
 import API from './api';
 
 export const registerUser = async (name, email, password) => {
-  return await API('/auth/register', {
-    method: 'POST',
-    body: JSON.stringify({
-      name,
-      email,
-      password,
-    }),
+  const response = await API.post('/auth/register', {
+    name,
+    email,
+    password,
   });
+
+  return response.data;
 };
 
 export const loginUser = async (email, password) => {
-  return await API('/auth/login', {
-    Method: 'POST',
-    Body: JSON.stringify({
-      email,
-      password,
-    }),
+  const response = await API.post('/auth/login', {
+    email,
+    password,
   });
+
+  return response.data;
 };
 
 export const getCurrentUser = async (token) => {
-  return await API('/auth/me', {
-    Method: 'GET',
-    Headers: {
+  const response = await API.get('/auth/me', {
+    headers: {
       Authorization: `Bearer ${token}`,
     },
   });
+
+  return response.data;
 };

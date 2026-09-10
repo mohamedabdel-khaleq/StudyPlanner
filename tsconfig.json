@@ -14,5 +14,5 @@
   "include": [
     "**/*.ts",
     "**/*.tsx"
-, "src/screens/WelcomeScreen.jsx", "src/screens/LoginScreen.jsx", "src/screens/HomeScreen.jsx", "App.js", "src/screens/TaskDetailsScreen.jsx", "src/screens/PlannerScreen.jsx", "src/services/api.js", "src/constants/theme.ts", "src/services/authService.js", "src/context/AuthContext.jsx"  ]
+, "src/screens/WelcomeScreen.jsx", "src/screens/LoginScreen.jsx", "src/screens/HomeScreen.jsx", "App.js", "src/screens/TaskDetailsScreen.jsx", "src/screens/PlannerScreen.jsx", "src/services/api.js", "src/constants/theme.ts", "src/services/authService.js", "src/context/AuthContext.jsx", "src/services/taskService.js", "src/screens/CategoriesScreen.jsx", "src/screens/CompletedTasksScreen.jsx", "src/screens/EditTaskScreen.jsx", "src/screens/AddTaskScreen.jsx"  ]
 }

@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
+
 import {
   View,
   Text,
@@ -6,38 +7,184 @@ import {
   ScrollView,
   Pressable,
   SafeAreaView,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 
+import { useFocusEffect } from '@react-navigation/native';
+
+import { useAuth } from '../context/AuthContext';
+import {
+  getTasks,
+  completeTask,
+} from '../services/taskService';
+
 const HomeScreen = ({ navigation }) => {
+  const { user, token } = useAuth();
+
+  const [tasks, setTasks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadTasks = async (isRefresh = false) => {
+    if (!token) {
+      return;
+    }
+
+    try {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      const data = await getTasks(token);
+
+      console.log('Tasks:', data);
+
+      if (Array.isArray(data)) {
+        setTasks(data);
+      } else if (Array.isArray(data?.tasks)) {
+        setTasks(data.tasks);
+      } else {
+        setTasks([]);
+      }
+    } catch (error) {
+      console.log('Get tasks error:', error);
+
+      Alert.alert(
+        'Error',
+        'Could not load your tasks.'
+      );
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      loadTasks();
+    }, [token])
+  );
+
+  const activeTasks = tasks.filter(
+    (task) => !task.completed
+  );
+
+  const completedTasks = tasks.filter(
+    (task) => task.completed
+  );
+
+  const progress =
+    tasks.length === 0
+      ? 0
+      : Math.round(
+          (completedTasks.length / tasks.length) * 100
+        );
+
+  const handleCompleteTask = async (taskId) => {
+    try {
+      await completeTask(token, taskId);
+
+      setTasks((currentTasks) =>
+        currentTasks.map((task) =>
+          task.id === taskId
+            ? { ...task, completed: true }
+            : task
+        )
+      );
+    } catch (error) {
+      console.log('Complete task error:', error);
+
+      Alert.alert(
+        'Error',
+        'Could not complete this task.'
+      );
+    }
+  };
+
+  const getPriorityStyle = (priority) => {
+    if (priority === 'high') {
+      return styles.highPriority;
+    }
+
+    if (priority === 'medium') {
+      return styles.mediumPriority;
+    }
+
+    return styles.lowPriority;
+  };
+
+  const getPriorityText = (priority) => {
+    if (!priority) {
+      return 'LOW';
+    }
+
+    return priority.toUpperCase();
+  };
+
+  const getTaskTitle = (task) => {
+    return (
+      task.title ||
+      task.name ||
+      'Untitled Task'
+    );
+  };
+
+  const getTaskCategory = (task) => {
+    if (typeof task.category === 'string') {
+      return task.category;
+    }
+
+    if (task.category?.name) {
+      return task.category.name;
+    }
+
+    return 'Task';
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
+        refreshing={refreshing}
+        onRefresh={() => loadTasks(true)}
       >
 
+        {/* HEADER */}
         <View style={styles.header}>
           <View style={styles.profile}>
+
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>👤</Text>
+              <Text style={styles.avatarText}>
+                👤
+              </Text>
             </View>
+
             <View>
               <Text style={styles.hello}>
                 Hello!
               </Text>
+
               <Text style={styles.username}>
-                USER
+                {user?.name || 'USER'}
               </Text>
             </View>
+
           </View>
+
           <Text style={styles.notification}>
+            🔔
           </Text>
         </View>
 
 
+        {/* TODAY CARD */}
         <View style={styles.todayCard}>
-          <View>
 
+          <View>
             <Text style={styles.todayText}>
               Your Today is
             </Text>
@@ -46,22 +193,29 @@ const HomeScreen = ({ navigation }) => {
               Almost Done!
             </Text>
 
-            <Pressable style={styles.viewButton}>
+            <Pressable
+              style={styles.viewButton}
+              onPress={() =>
+                navigation.navigate('PlannerScreen')
+              }
+            >
               <Text style={styles.viewButtonText}>
                 View Tasks
               </Text>
             </Pressable>
-
           </View>
 
 
           <View style={styles.progressCircle}>
             <Text style={styles.progressText}>
-              85%
+              {progress}%
             </Text>
           </View>
+
         </View>
 
+
+        {/* IN PROGRESS */}
         <View style={styles.sectionRow}>
 
           <Text style={styles.sectionTitle}>
@@ -69,59 +223,100 @@ const HomeScreen = ({ navigation }) => {
           </Text>
 
           <Text style={styles.smallPurple}>
-            ◦
+            •
           </Text>
 
         </View>
 
 
-        <ScrollView
-          Horizontal
-          showsHorizontalScrollIndicator={false}
-        >
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator
+              size="small"
+              color="#5B2DE8"
+            />
 
-          <View style={styles.progressCard}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardCategory}>
-                Office Project
-              </Text>
+            <Text style={styles.loadingText}>
+              Loading tasks...
+            </Text>
+          </View>
+        ) : activeTasks.length === 0 ? (
 
-              <Text>👜</Text>
-
-            </View>
-
-            <Text style={styles.cardTitle}>
-              Grocery shopping app
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>
+              No active tasks
             </Text>
 
-            <Text style={styles.cardTitle}>
-              Design
+            <Text style={styles.emptyText}>
+              Add a new task to get started.
             </Text>
           </View>
 
-          <View style={styles.progressCard2}>
+        ) : (
 
-            <View style={styles.cardHeader}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+          >
 
-              <Text style={styles.cardCategory}>
-                Personal Project
-              </Text>
+            {activeTasks.slice(0, 5).map((task, index) => (
 
-              <Text>💼</Text>
+              <Pressable
+                key={task.id || index}
+                style={[
+                  styles.progressCard,
+                  index % 2 === 1 &&
+                    styles.progressCard2,
+                ]}
+                onPress={() =>
+                  navigation.navigate(
+                    'TaskDetailsScreen',
+                    {
+                      taskId: task.id,
+                    }
+                  )
+                }
+              >
 
-            </View>
+                <View style={styles.cardHeader}>
 
-            <Text style={styles.cardTitle}>
-              Uber Eats redesign
-            </Text>
+                  <Text style={styles.cardCategory}>
+                    {getTaskCategory(task)}
+                  </Text>
 
-            <Text style={styles.cardTitle}>
-              Challenge
-            </Text>
-          </View>
-        </ScrollView>
+                  <Text>
+                    📚
+                  </Text>
+
+                </View>
+
+                <Text
+                  style={styles.cardTitle}
+                  numberOfLines={2}
+                >
+                  {getTaskTitle(task)}
+                </Text>
+
+                <View
+                  style={[
+                    styles.priorityBadge,
+                    getPriorityStyle(task.priority),
+                  ]}
+                >
+                  <Text style={styles.priorityText}>
+                    {getPriorityText(task.priority)}
+                  </Text>
+                </View>
+
+              </Pressable>
+
+            ))}
+
+          </ScrollView>
+        )}
 
 
+        {/* TASK GROUPS */}
         <View style={styles.sectionRow}>
 
           <Text style={styles.sectionTitle}>
@@ -129,124 +324,162 @@ const HomeScreen = ({ navigation }) => {
           </Text>
 
           <Text style={styles.groupNumber}>
-            4
+            {tasks.length}
           </Text>
+
         </View>
 
 
+        {/* TOTAL TASKS */}
         <Pressable
-          Style={styles.taskGroup}
-          onPress={() => navigation.navigate('CategoryScreen')}
+          style={styles.taskGroup}
+          onPress={() =>
+            navigation.navigate('CategoryScreen')
+          }
         >
 
-          <View style={[styles.groupIcon, styles.pink]}>
-            <Text>👜</Text>
+          <View
+            style={[
+              styles.groupIcon,
+              styles.purple,
+            ]}
+          >
+            <Text>📋</Text>
           </View>
 
-          <View>
+          <View style={styles.groupTextContainer}>
+
             <Text style={styles.groupTitle}>
-              Office Project
+              All Tasks
             </Text>
 
             <Text style={styles.taskNumber}>
-              23 Tasks
+              {tasks.length} Tasks
             </Text>
+
           </View>
 
         </Pressable>
 
+
+        {/* ACTIVE TASKS */}
         <Pressable
-          Style={styles.taskGroup}
-          onPress={() => navigation.navigate('CategoryScreen')}
+          style={styles.taskGroup}
+          onPress={() =>
+            navigation.navigate('PlannerScreen')
+          }
         >
 
-          <View style={[styles.groupIcon, styles.purple]}>
-            <Text>💼</Text>
-          </View>
-
-          <View>
-            <Text style={styles.groupTitle}>
-              Personal Project
-            </Text>
-
-            <Text style={styles.taskNumber}>
-              30 Tasks
-            </Text>
-          </View>
-        </Pressable>
-
-
-        <Pressable style={styles.taskGroup}>
-
-          <View style={[styles.groupIcon, styles.orange]}>
+          <View
+            style={[
+              styles.groupIcon,
+              styles.orange,
+            ]}
+          >
             <Text>📚</Text>
           </View>
 
-          <View>
+          <View style={styles.groupTextContainer}>
+
             <Text style={styles.groupTitle}>
-              Daily Study
+              In Progress
             </Text>
 
             <Text style={styles.taskNumber}>
-              30 Tasks
+              {activeTasks.length} Tasks
             </Text>
+
           </View>
 
         </Pressable>
 
 
-        <Pressable style={styles.taskGroup}>
+        {/* COMPLETED */}
+        <Pressable
+          style={styles.taskGroup}
+          onPress={() =>
+            navigation.navigate('CompletedScreen')
+          }
+        >
 
-          <View style={[styles.groupIcon, styles.yellow]}>
-            <Text>📖</Text>
+          <View
+            style={[
+              styles.groupIcon,
+              styles.yellow,
+            ]}
+          >
+            <Text>✅</Text>
           </View>
 
-          <View>
+          <View style={styles.groupTextContainer}>
+
             <Text style={styles.groupTitle}>
-              Daily Study
+              Completed
             </Text>
 
             <Text style={styles.taskNumber}>
-              12 Tasks
+              {completedTasks.length} Tasks
             </Text>
+
           </View>
 
+        </Pressable>
+
+
+        {/* ADD TASK */}
+        <Pressable
+          style={styles.addButton}
+          onPress={() =>
+            navigation.navigate('AddTask')
+          }
+        >
+          <Text style={styles.plus}>
+            +
+          </Text>
         </Pressable>
 
       </ScrollView>
 
-      <Pressable
-        Style={styles.addButton}
-        onPress={() => navigation.navigate('AddTask')}
-      >
-        <Text style={styles.plus}>
-          +
-        </Text>
-      </Pressable>
 
-
+      {/* BOTTOM NAV */}
       <View style={styles.bottomNav}>
 
         <Pressable>
-          <Text style={styles.navIcon}>⌂</Text>
+          <Text style={styles.navIcon}>
+            ⌂
+          </Text>
         </Pressable>
 
         <Pressable
-          onPress={() => navigation.navigate('PlannerScreen')}
+          onPress={() =>
+            navigation.navigate('PlannerScreen')
+          }
         >
-          <Text style={styles.navIcon}>▣</Text>
+          <Text style={styles.navIcon}>
+            ▣
+          </Text>
         </Pressable>
 
         <View style={{ width: 50 }} />
 
         <Pressable
-          onPress={() => navigation.navigate('CompletedScreen')}
+          onPress={() =>
+            navigation.navigate('CompletedScreen')
+          }
         >
-          <Text style={styles.navIcon}>▤</Text>
+          <Text style={styles.navIcon}>
+            ▤
+          </Text>
         </Pressable>
 
-        <Pressable>
-          <Text style={styles.navIcon}>♣</Text>
+        <Pressable
+          onPress={() =>
+            navigation.navigate('CategoryScreen')
+          }
+        >
+          <Text style={styles.navIcon}>
+            ♣
+          </Text>
         </Pressable>
 
       </View>
@@ -256,6 +489,7 @@ const HomeScreen = ({ navigation }) => {
 };
 
 export default HomeScreen;
+
 
 const styles = StyleSheet.create({
 
@@ -312,15 +546,12 @@ const styles = StyleSheet.create({
     fontSize: 19,
   },
 
-
   todayCard: {
     height: 128,
     marginTop: 20,
     borderRadius: 19,
     backgroundColor: '#5B2DE8',
-
     paddingHorizontal: 18,
-
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -353,7 +584,6 @@ const styles = StyleSheet.create({
     borderRadius: 33,
     borderWidth: 5,
     borderColor: '#FFFFFF',
-
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -390,7 +620,7 @@ const styles = StyleSheet.create({
 
   progressCard: {
     width: 175,
-    height: 92,
+    height: 110,
     backgroundColor: '#E7F4FC',
     borderRadius: 13,
     padding: 12,
@@ -398,12 +628,7 @@ const styles = StyleSheet.create({
   },
 
   progressCard2: {
-    width: 175,
-    height: 92,
     backgroundColor: '#FFF0EC',
-    borderRadius: 13,
-    padding: 12,
-    marginRight: 10,
   },
 
   cardHeader: {
@@ -420,6 +645,65 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#333',
+    marginTop: 8,
+  },
+
+  priorityBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginTop: 7,
+  },
+
+  highPriority: {
+    backgroundColor: '#FFE0E0',
+  },
+
+  mediumPriority: {
+    backgroundColor: '#FFF0C9',
+  },
+
+  lowPriority: {
+    backgroundColor: '#DFF5E5',
+  },
+
+  priorityText: {
+    fontSize: 7,
+    fontWeight: '800',
+    color: '#555',
+  },
+
+  loadingContainer: {
+    height: 110,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  loadingText: {
+    fontSize: 11,
+    color: '#999',
+    marginTop: 7,
+  },
+
+  emptyCard: {
+    height: 100,
+    backgroundColor: '#F7F4FF',
+    borderRadius: 13,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+
+  emptyTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#444',
+  },
+
+  emptyText: {
+    fontSize: 10,
+    color: '#999',
     marginTop: 4,
   },
 
@@ -428,23 +712,16 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
-
     marginBottom: 10,
-
     flexDirection: 'row',
     alignItems: 'center',
-
     paddingHorizontal: 13,
-
     elevation: 2,
-
     shadowOffset: {
       width: 0,
       height: 2,
     },
-
     shadowOpacity: 0.08,
-
     shadowRadius: 5,
   },
 
@@ -452,15 +729,9 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 11,
-
     justifyContent: 'center',
     alignItems: 'center',
-
     marginRight: 12,
-  },
-
-  pink: {
-    backgroundColor: '#FFE5F0',
   },
 
   purple: {
@@ -473,6 +744,10 @@ const styles = StyleSheet.create({
 
   yellow: {
     backgroundColor: '#FFF5C9',
+  },
+
+  groupTextContainer: {
+    flex: 1,
   },
 
   groupTitle: {
