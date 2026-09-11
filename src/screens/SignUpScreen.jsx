@@ -1,6 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
 import React, { useState } from 'react';
-
 import {
   Alert,
   Text,
@@ -11,12 +10,15 @@ import {
   ScrollView,
 } from 'react-native';
 
+import { Ionicons } from '@expo/vector-icons';
+
 const SignUpScreen = () => {
   const navigation = useNavigation();
-
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleSignUp = () => {
     // Check empty fields
@@ -74,9 +76,11 @@ const SignUpScreen = () => {
           <View style={styles.signupHeader}>
 
             <View style={styles.iconContainer}>
-              <Text style={styles.iconText}>
-                ⇥
-              </Text>
+              <Ionicons
+                name="log-in-outline"
+                size={27}
+                color="#6600FF"
+              />
             </View>
 
             <View style={styles.signupTextContainer}>
@@ -103,9 +107,12 @@ const SignUpScreen = () => {
 
           <View style={styles.inputWrapper}>
 
-            <Text style={styles.inputIcon}>
-              👤
-            </Text>
+            <Ionicons
+              name="person-outline"
+              size={20}
+              color="#5E4B8B"
+              style={styles.inputIcon}
+            />
 
             <TextInput
               style={styles.input}
@@ -127,9 +134,12 @@ const SignUpScreen = () => {
 
           <View style={styles.inputWrapper}>
 
-            <Text style={styles.inputIcon}>
-              🔒
-            </Text>
+            <Ionicons
+              name="lock-closed-outline"
+              size={20}
+              color="#5E4B8B"
+              style={styles.inputIcon}
+            />
 
             <TextInput
               style={styles.input}
@@ -137,9 +147,31 @@ const SignUpScreen = () => {
               placeholderTextColor="#777777"
               value={password}
               onChangeText={setPassword}
-              secureTextEntry={true}
+              secureTextEntry={!showPassword}
               autoCapitalize="none"
+              autoCorrect={false}
             />
+
+            {/* Eye Button */}
+            <TouchableOpacity
+              style={styles.eyeButton}
+              onPress={() =>
+                setShowPassword((prev) => !prev)
+              }
+              activeOpacity={0.7}
+            >
+
+              <Ionicons
+                name={
+                  showPassword
+                    ? 'eye-off-outline'
+                    : 'eye-outline'
+                }
+                size={21}
+                color="#5E4B8B"
+              />
+
+            </TouchableOpacity>
 
           </View>
 
@@ -150,9 +182,12 @@ const SignUpScreen = () => {
 
           <View style={styles.inputWrapper}>
 
-            <Text style={styles.inputIcon}>
-              🔒
-            </Text>
+            <Ionicons
+              name="lock-closed-outline"
+              size={20}
+              color="#5E4B8B"
+              style={styles.inputIcon}
+            />
 
             <TextInput
               style={styles.input}
@@ -160,9 +195,31 @@ const SignUpScreen = () => {
               placeholderTextColor="#777777"
               value={confirmPassword}
               onChangeText={setConfirmPassword}
-              secureTextEntry={true}
+              secureTextEntry={!showConfirmPassword}
               autoCapitalize="none"
+              autoCorrect={false}
             />
+
+            {/* Eye Button */}
+            <TouchableOpacity
+              style={styles.eyeButton}
+              onPress={() =>
+                setShowConfirmPassword((prev) => !prev)
+              }
+              activeOpacity={0.7}
+            >
+
+              <Ionicons
+                name={
+                  showConfirmPassword
+                    ? 'eye-off-outline'
+                    : 'eye-outline'
+                }
+                size={21}
+                color="#5E4B8B"
+              />
+
+            </TouchableOpacity>
 
           </View>
 
@@ -177,9 +234,11 @@ const SignUpScreen = () => {
               Let's Start
             </Text>
 
-            <Text style={styles.arrow}>
-              ➜
-            </Text>
+            <Ionicons
+              name="arrow-forward-outline"
+              size={22}
+              color="#FFFFFF"
+            />
 
           </TouchableOpacity>
 
@@ -191,11 +250,15 @@ const SignUpScreen = () => {
             </Text>
 
             <TouchableOpacity
-              onPress={() => navigation.navigate('LoginScreen')}
+              onPress={() =>
+                navigation.navigate('LoginScreen')
+              }
             >
+
               <Text style={styles.loginLink}>
                 Log In
               </Text>
+
             </TouchableOpacity>
 
           </View>
@@ -279,12 +342,6 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
 
-  iconText: {
-    fontSize: 28,
-    color: '#6600FF',
-    fontWeight: 'bold',
-  },
-
   signupTextContainer: {
     flex: 1,
   },
@@ -338,8 +395,6 @@ const styles = StyleSheet.create({
   },
 
   inputIcon: {
-    fontSize: 20,
-
     marginLeft: 14,
     marginRight: 8,
   },
@@ -353,9 +408,18 @@ const styles = StyleSheet.create({
 
     color: '#222222',
 
-    paddingRight: 12,
-
+    paddingRight: 5,
     paddingLeft: 0,
+  },
+
+  eyeButton: {
+    width: 45,
+    height: 48,
+
+    justifyContent: 'center',
+    alignItems: 'center',
+
+    marginRight: 2,
   },
 
   button: {
@@ -386,14 +450,6 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
 
-  arrow: {
-    color: '#FFFFFF',
-
-    fontSize: 22,
-
-    fontWeight: 'bold',
-  },
-
   loginBottom: {
     flexDirection: 'row',
 
@@ -422,4 +478,3 @@ const styles = StyleSheet.create({
 });
 
 export default SignUpScreen;
-

@@ -1,135 +1,59 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+
 import {
   ActivityIndicator,
   Alert,
   Modal,
+  Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+
 import { MaterialIcons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '../context/AuthContext';
-import { createTask } from '../services/taskService';
 
-const AddTaskScreen = () => {
-  const navigation = useNavigation();
+import {
+  createTask,
+} from '../services/taskService';
+
+import {
+  getCategories,
+  createCategory,
+} from '../services/categoryService';
+
+const AddTaskScreen = ({ navigation }) => {
   const { token } = useAuth();
-
-  const [taskGroups, setTaskGroups] = useState([
-    'Work',
-    'Study',
-    'Personal',
-  ]);
-
-  const [selectedGroup, setSelectedGroup] = useState('Work');
-  const [showGroupDropdown, setShowGroupDropdown] = useState(false);
-  const [showAddGroupModal, setShowAddGroupModal] = useState(false);
-  const [newGroupName, setNewGroupName] = useState('');
-
-  const [projectName, setProjectName] = useState('');
+  const [taskName, setTaskName] = useState('');
   const [description, setDescription] = useState('');
-
-  const [startDate, setStartDate] = useState(new Date());
-
+  const [startDate, setStartDate] = useState(
+    new Date()
+  );
   const [endDate, setEndDate] = useState(
-    new Date(Date.now() + 24 * 60 * 60 * 1000)
+    new Date()
   );
-
-  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
-  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
-
+  const [priority, setPriority] = useState('Medium');
+  const [categories, setCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] =
+    useState(null);
+  const [loadingCategories, setLoadingCategories] =
+    useState(true);
   const [saving, setSaving] = useState(false);
+  const [categoryModalVisible, setCategoryModalVisible] =
+    useState(false);
+  const [newCategoryName, setNewCategoryName] =
+    useState('');
+  const [creatingCategory, setCreatingCategory] =
+    useState(false);
+  const [dateModalVisible, setDateModalVisible] =
+    useState(false);
 
-  // =========================
-  // MONTHS
-  // =========================
-
-  const months = useMemo(
-    () => [
-      'January',
-      'February',
-      'March',
-      'April',
-      'May',
-      'June',
-      'July',
-      'August',
-      'September',
-      'October',
-      'November',
-      'December',
-    ],
-    []
-  );
-
-  // =========================
-  // YEARS
-  // =========================
-
-  const years = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-
-    return Array.from(
-      { length: 10 },
-      (_, index) => currentYear + index
-    );
-  }, []);
-
-  // =========================
-  // START DATE DAYS
-  // =========================
-
-  const startDays = useMemo(() => {
-    const daysInMonth = new Date(
-      startDate.getFullYear(),
-      startDate.getMonth() + 1,
-      0
-    ).getDate();
-
-    return Array.from(
-      { length: daysInMonth },
-      (_, index) => index + 1
-    );
-  }, [startDate]);
-
-  // =========================
-  // END DATE DAYS
-  // =========================
-
-  const endDays = useMemo(() => {
-    const daysInMonth = new Date(
-      endDate.getFullYear(),
-      endDate.getMonth() + 1,
-      0
-    ).getDate();
-
-    return Array.from(
-      { length: daysInMonth },
-      (_, index) => index + 1
-    );
-  }, [endDate]);
-
-  // =========================
-  // FORMAT DATE
-  // =========================
-
-  const formatDate = (date) => {
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  };
-
-  // =========================
-  // FORMAT DATE FOR API
-  // =========================
+  const [dateType, setDateType] = useState('end');
 
   const formatDateToISO = (date) => {
     const year = date.getFullYear();
@@ -145,113 +69,315 @@ const AddTaskScreen = () => {
     return `${year}-${month}-${day}`;
   };
 
-  // =========================
-  // ADD GROUP
-  // =========================
-
-  const handleAddGroup = () => {
-    const groupName = newGroupName.trim();
-
-    if (!groupName) {
-      Alert.alert(
-        'Error',
-        'Please enter a group name.'
-      );
-      return;
+  const formatDateForUI = (date) => {
+    if (!date) {
+      return 'Select date';
     }
 
-    const alreadyExists = taskGroups.some(
-      (group) =>
-        group.toLowerCase() ===
-        groupName.toLowerCase()
-    );
-
-    if (alreadyExists) {
-      Alert.alert(
-        'Error',
-        'This group already exists.'
-      );
-      return;
-    }
-
-    setTaskGroups((currentGroups) => [
-      ...currentGroups,
-      groupName,
-    ]);
-
-    setSelectedGroup(groupName);
-    setNewGroupName('');
-    setShowAddGroupModal(false);
-    setShowGroupDropdown(false);
+    return date.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
   };
 
-  // =========================
-  // ADD PROJECT
-  // =========================
 
-  const handleAddProject = async () => {
+  const loadCategories = async () => {
+    if (!token) {
+      setLoadingCategories(false);
+      return;
+    }
+
+    try {
+      setLoadingCategories(true);
+
+      console.log(
+        'Loading categories for Add Task...'
+      );
+
+      const data = await getCategories(token);
+
+      console.log(
+        'Categories response:',
+        data
+      );
+
+      let categoriesData = [];
+
+      if (Array.isArray(data)) {
+        categoriesData = data;
+      } else if (
+        Array.isArray(data?.categories)
+      ) {
+        categoriesData = data.categories;
+      } else if (
+        Array.isArray(data?.items)
+      ) {
+        categoriesData = data.items;
+      }
+
+      setCategories(categoriesData);
+
+      // Auto select first category
+      if (categoriesData.length > 0) {
+        setSelectedCategory(
+          categoriesData[0]
+        );
+      }
+    } catch (error) {
+      console.log(
+        'Load categories error:',
+        error
+      );
+
+      console.log(
+        'Categories status:',
+        error?.response?.status
+      );
+
+      console.log(
+        'Categories response:',
+        error?.response?.data
+      );
+
+      Alert.alert(
+        'Error',
+        'Could not load categories.'
+      );
+    } finally {
+      setLoadingCategories(false);
+    }
+  };
+
+  useEffect(() => {
+    loadCategories();
+  }, [token]);
+
+
+  const openDatePicker = (type) => {
+    setDateType(type);
+    setDateModalVisible(true);
+  };
+
+  const changeDate = (days) => {
+    const currentDate =
+      dateType === 'start'
+        ? startDate
+        : endDate;
+
+    const newDate = new Date(currentDate);
+
+    newDate.setDate(
+      newDate.getDate() + days
+    );
+
+    if (dateType === 'start') {
+      setStartDate(newDate);
+
+      // Keep end date >= start date
+      if (newDate > endDate) {
+        setEndDate(new Date(newDate));
+      }
+    } else {
+      setEndDate(newDate);
+    }
+  };
+
+  const handleCreateCategory = async () => {
+    const name =
+      newCategoryName.trim();
+
+    if (!name) {
+      Alert.alert(
+        'Validation',
+        'Please enter a category name.'
+      );
+
+      return;
+    }
+
     if (!token) {
       Alert.alert(
         'Error',
-        'You are not logged in.'
+        'You are not authenticated.'
       );
+
       return;
     }
 
-    const finalName = projectName.trim();
+    try {
+      setCreatingCategory(true);
+
+      console.log(
+        'Creating category:',
+        name
+      );
+
+      const response =
+        await createCategory(
+          token,
+          {
+            name,
+          }
+        );
+
+      console.log(
+        'Create category response:',
+        response
+      );
+
+      const newCategory =
+        response?.category ||
+        response;
+
+      if (
+        !newCategory ||
+        !newCategory.id
+      ) {
+        throw new Error(
+          'Invalid category response'
+        );
+      }
+
+      setCategories((prev) => [
+        ...prev,
+        newCategory,
+      ]);
+
+      setSelectedCategory(
+        newCategory
+      );
+
+      setNewCategoryName('');
+
+      setCategoryModalVisible(false);
+
+      Alert.alert(
+        'Success',
+        'Category created successfully.'
+      );
+    } catch (error) {
+      console.log(
+        'Create category error:',
+        error
+      );
+
+      console.log(
+        'Create category status:',
+        error?.response?.status
+      );
+
+      console.log(
+        'Create category response:',
+        error?.response?.data
+      );
+
+      Alert.alert(
+        'Error',
+        'Could not create category.'
+      );
+    } finally {
+      setCreatingCategory(false);
+    }
+  };
+
+
+  const validateForm = () => {
+    const finalName =
+      taskName.trim();
 
     if (!finalName) {
       Alert.alert(
-        'Required',
-        'Please enter a project name.'
+        'Validation',
+        'Please enter a task title.'
       );
-      return;
+
+      return false;
+    }
+
+    if (!selectedCategory) {
+      Alert.alert(
+        'Validation',
+        'Please select a category.'
+      );
+
+      return false;
     }
 
     if (endDate < startDate) {
       Alert.alert(
-        'Invalid Date',
-        'End date cannot be earlier than start date.'
+        'Validation',
+        'Due date cannot be before start date.'
       );
+
+      return false;
+    }
+
+    if (!token) {
+      Alert.alert(
+        'Error',
+        'You are not authenticated.'
+      );
+
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleCreateTask = async () => {
+    if (!validateForm()) {
       return;
     }
 
     try {
       setSaving(true);
 
-      // Backend TaskCreate currently supports:
-      // title
-      // description
-      // due_date
+      const finalName =
+        taskName.trim();
 
       const taskData = {
         title: finalName,
-        description: description.trim(),
-        due_date: formatDateToISO(startDate),
+
+        description:
+          description.trim(),
+
+        due_date:
+          formatDateToISO(endDate),
+
+        priority:
+          priority.toLowerCase(),
+
+        category_id:
+          selectedCategory.id,
       };
 
       console.log(
-        'Creating task:',
+        'Create Task Request:',
         taskData
       );
 
-      const createdTask = await createTask(
-        token,
-        taskData
-      );
+      const response =
+        await createTask(
+          token,
+          taskData
+        );
 
       console.log(
-        'Created task:',
-        createdTask
+        'Create Task Response:',
+        response
       );
 
       Alert.alert(
         'Success',
-        'Project has been added successfully.',
+        'Task created successfully.',
         [
           {
             text: 'OK',
-            onPress: () => navigation.goBack(),
+            onPress: () => {
+              navigation.goBack();
+            },
           },
         ]
       );
@@ -261,1376 +387,1232 @@ const AddTaskScreen = () => {
         error
       );
 
-      const message =
-        error?.response?.data?.detail ||
-        error?.response?.data?.message ||
-        'Could not add the project. Please try again.';
+      console.log(
+        'Create task status:',
+        error?.response?.status
+      );
+
+      console.log(
+        'Create task response:',
+        error?.response?.data
+      );
+
+      let message =
+        'Could not create the task.';
+
+      if (
+        error?.response?.data?.detail
+      ) {
+        message =
+          Array.isArray(
+            error.response.data.detail
+          )
+            ? error.response.data.detail
+                .map(
+                  (item) =>
+                    item.msg
+                )
+                .join('\n')
+            : String(
+                error.response.data.detail
+              );
+      }
 
       Alert.alert(
         'Error',
-        String(message)
+        message
       );
     } finally {
       setSaving(false);
     }
   };
 
-  // =========================
-  // CHANGE START DATE
-  // =========================
 
-  const changeStartDate = (type, value) => {
-    const newDate = new Date(startDate);
+  const renderCategory = ({
+    item,
+  }) => {
+    const isSelected =
+      selectedCategory?.id ===
+      item.id;
 
-    if (type === 'month') {
-      newDate.setMonth(value);
-    }
+    return (
+      <TouchableOpacity
+        style={[
+          styles.categoryItem,
+          isSelected &&
+            styles.categoryItemSelected,
+        ]}
+        onPress={() =>
+          setSelectedCategory(item)
+        }
+        activeOpacity={0.8}
+      >
+        <MaterialIcons
+          name="folder"
+          size={18}
+          color={
+            isSelected
+              ? '#FFFFFF'
+              : '#6600FF'
+          }
+        />
 
-    if (type === 'year') {
-      newDate.setFullYear(value);
-    }
+        <Text
+          style={[
+            styles.categoryItemText,
+            isSelected &&
+              styles.categoryItemTextSelected,
+          ]}
+        >
+          {item.name}
+        </Text>
 
-    if (type === 'day') {
-      newDate.setDate(value);
-    }
-
-    setStartDate(newDate);
+        {isSelected && (
+          <MaterialIcons
+            name="check"
+            size={18}
+            color="#FFFFFF"
+          />
+        )}
+      </TouchableOpacity>
+    );
   };
-
-  // =========================
-  // CHANGE END DATE
-  // =========================
-
-  const changeEndDate = (type, value) => {
-    const newDate = new Date(endDate);
-
-    if (type === 'month') {
-      newDate.setMonth(value);
-    }
-
-    if (type === 'year') {
-      newDate.setFullYear(value);
-    }
-
-    if (type === 'day') {
-      newDate.setDate(value);
-    }
-
-    setEndDate(newDate);
-  };
-
-  // =========================
-  // UI
-  // =========================
 
   return (
-    <LinearGradient
-      colors={[
-        '#F8F5FF',
-        '#FFFFFF',
-      ]}
-      style={styles.gradientContainer}
+    <SafeAreaView
+      style={styles.container}
+      edges={['top', 'bottom']}
     >
-      <View style={styles.container}>
+      <LinearGradient
+        colors={[
+          '#F0F9FF',
+          '#E6F3FF',
+          '#F0E6FF',
+          '#FFF5F0',
+        ]}
+        locations={[
+          0,
+          0.33,
+          0.66,
+          1,
+        ]}
+        start={{
+          x: 0,
+          y: 0,
+        }}
+        end={{
+          x: 1,
+          y: 1,
+        }}
+        style={styles.gradient}
+      >
 
         {/* ================= HEADER ================= */}
 
         <View style={styles.header}>
+
           <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            disabled={saving}
+            style={styles.headerButton}
+            onPress={() =>
+              navigation.goBack()
+            }
+            activeOpacity={0.8}
           >
             <MaterialIcons
               name="arrow-back"
-              size={28}
+              size={25}
               color="#1A202C"
             />
           </TouchableOpacity>
 
           <Text style={styles.headerTitle}>
-            Add Project
+            Add Task
           </Text>
 
-          <View style={{ width: 28 }} />
+          <View
+            style={styles.headerPlaceholder}
+          />
+
         </View>
 
-        {/* ================= CONTENT ================= */}
 
         <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={
-            styles.scrollContent
+          showsVerticalScrollIndicator={
+            false
           }
+          contentContainerStyle={
+            styles.content
+          }
+          keyboardShouldPersistTaps="handled"
         >
 
-          {/* ================= TASK GROUP ================= */}
 
-          <TouchableOpacity
-            style={styles.card}
-            activeOpacity={0.8}
-            onPress={() =>
-              setShowGroupDropdown(true)
-            }
-            disabled={saving}
-          >
-            <View style={styles.cardContent}>
+          <View style={styles.card}>
 
-              <View style={styles.iconWork}>
+            <Text style={styles.label}>
+              Task Title
+            </Text>
+
+            <TextInput
+              value={taskName}
+              onChangeText={
+                setTaskName
+              }
+              placeholder="Enter task title"
+              placeholderTextColor="#A0AEC0"
+              style={styles.input}
+              maxLength={100}
+            />
+
+          </View>
+
+
+          <View style={styles.card}>
+
+            <Text style={styles.label}>
+              Description
+            </Text>
+
+            <TextInput
+              value={description}
+              onChangeText={
+                setDescription
+              }
+              placeholder="Enter task description"
+              placeholderTextColor="#A0AEC0"
+              style={[
+                styles.input,
+                styles.textArea,
+              ]}
+              multiline
+              textAlignVertical="top"
+              maxLength={500}
+            />
+
+          </View>
+
+
+          <View style={styles.card}>
+
+            <View
+              style={styles.labelRow}
+            >
+
+              <Text style={styles.label}>
+                Category
+              </Text>
+
+              <TouchableOpacity
+                onPress={() =>
+                  setCategoryModalVisible(
+                    true
+                  )
+                }
+              >
+                <Text
+                  style={
+                    styles.addCategoryText
+                  }
+                >
+                  + Add
+                </Text>
+              </TouchableOpacity>
+
+            </View>
+
+            {loadingCategories ? (
+
+              <View
+                style={
+                  styles.categoryLoading
+                }
+              >
+
+                <ActivityIndicator
+                  size="small"
+                  color="#6600FF"
+                />
+
+                <Text
+                  style={
+                    styles.categoryLoadingText
+                  }
+                >
+                  Loading categories...
+                </Text>
+
+              </View>
+
+            ) : categories.length ===
+              0 ? (
+
+              <View
+                style={
+                  styles.emptyCategory
+                }
+              >
+
                 <MaterialIcons
-                  name="work-outline"
-                  size={23}
+                  name="folder-off"
+                  size={25}
+                  color="#A0AEC0"
+                />
+
+                <Text
+                  style={
+                    styles.emptyCategoryText
+                  }
+                >
+                  No categories found
+                </Text>
+
+                <TouchableOpacity
+                  style={
+                    styles.createFirstCategoryButton
+                  }
+                  onPress={() =>
+                    setCategoryModalVisible(
+                      true
+                    )
+                  }
+                >
+
+                  <Text
+                    style={
+                      styles.createFirstCategoryText
+                    }
+                  >
+                    Create Category
+                  </Text>
+
+                </TouchableOpacity>
+
+              </View>
+
+            ) : (
+
+              <View
+                style={
+                  styles.categoriesContainer
+                }
+              >
+
+                {categories.map((item) => (
+                  <View key={item.id}>
+                    {renderCategory({ item })}
+                  </View>
+                ))}
+
+              </View>
+
+            )}
+
+          </View>
+
+
+          <View style={styles.card}>
+
+            <Text style={styles.label}>
+              Start Date
+            </Text>
+
+            <TouchableOpacity
+              style={styles.dateButton}
+              onPress={() =>
+                openDatePicker(
+                  'start'
+                )
+              }
+              activeOpacity={0.8}
+            >
+
+              <View
+                style={
+                  styles.dateIcon
+                }
+              >
+                <MaterialIcons
+                  name="calendar-today"
+                  size={20}
                   color="#6600FF"
                 />
               </View>
 
-              <View style={styles.textContainer}>
-                <Text style={styles.label}>
-                  Task Group
-                </Text>
-
-                <Text style={styles.value}>
-                  {selectedGroup}
-                </Text>
-              </View>
+              <Text
+                style={
+                  styles.dateText
+                }
+              >
+                {formatDateForUI(
+                  startDate
+                )}
+              </Text>
 
               <MaterialIcons
                 name="keyboard-arrow-down"
-                size={24}
+                size={22}
                 color="#718096"
               />
 
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
 
-          {/* ================= PROJECT NAME ================= */}
+            <Text
+              style={
+                styles.helperText
+              }
+            >
+              Start date is used for
+              planning only.
+            </Text>
 
-          <View style={styles.card}>
-            <View style={styles.cardContent}>
-
-              <View style={styles.iconContainer}>
-                <MaterialIcons
-                  name="assignment"
-                  size={23}
-                  color="#6600FF"
-                />
-              </View>
-
-              <View style={styles.textContainer}>
-
-                <Text style={styles.label}>
-                  Project Name
-                </Text>
-
-                <TextInput
-                  value={projectName}
-                  onChangeText={setProjectName}
-                  placeholder="Enter project name"
-                  placeholderTextColor="#A0AEC0"
-                  style={styles.inputField}
-                  editable={!saving}
-                />
-
-              </View>
-
-            </View>
           </View>
 
-          {/* ================= DESCRIPTION ================= */}
-
           <View style={styles.card}>
-            <View style={styles.cardContent}>
 
-              <View style={styles.iconContainer}>
-                <MaterialIcons
-                  name="description"
-                  size={23}
-                  color="#6600FF"
-                />
-              </View>
+            <Text style={styles.label}>
+              Due Date
+            </Text>
 
-              <View style={styles.textContainer}>
+            <TouchableOpacity
+              style={styles.dateButton}
+              onPress={() =>
+                openDatePicker(
+                  'end'
+                )
+              }
+              activeOpacity={0.8}
+            >
 
-                <Text style={styles.label}>
-                  Description
-                </Text>
-
-                <TextInput
-                  value={description}
-                  onChangeText={setDescription}
-                  placeholder="Enter description"
-                  placeholderTextColor="#A0AEC0"
-                  multiline
-                  style={[
-                    styles.inputField,
-                    styles.textArea,
-                  ]}
-                  editable={!saving}
-                />
-
-              </View>
-
-            </View>
-          </View>
-
-          {/* ================= START DATE ================= */}
-
-          <TouchableOpacity
-            style={styles.card}
-            activeOpacity={0.8}
-            onPress={() =>
-              setShowStartDatePicker(true)
-            }
-            disabled={saving}
-          >
-            <View style={styles.cardContent}>
-
-              <View style={styles.iconContainer}>
-                <MaterialIcons
-                  name="calendar-today"
-                  size={22}
-                  color="#6600FF"
-                />
-              </View>
-
-              <View style={styles.textContainer}>
-
-                <Text style={styles.label}>
-                  Start Date
-                </Text>
-
-                <Text style={styles.value}>
-                  {formatDate(startDate)}
-                </Text>
-
-              </View>
-
-              <MaterialIcons
-                name="keyboard-arrow-right"
-                size={24}
-                color="#718096"
-              />
-
-            </View>
-          </TouchableOpacity>
-
-          {/* ================= END DATE ================= */}
-
-          <TouchableOpacity
-            style={styles.card}
-            activeOpacity={0.8}
-            onPress={() =>
-              setShowEndDatePicker(true)
-            }
-            disabled={saving}
-          >
-            <View style={styles.cardContent}>
-
-              <View style={styles.iconContainer}>
+              <View
+                style={
+                  styles.dateIcon
+                }
+              >
                 <MaterialIcons
                   name="event"
-                  size={22}
+                  size={20}
                   color="#6600FF"
                 />
               </View>
 
-              <View style={styles.textContainer}>
-
-                <Text style={styles.label}>
-                  End Date
-                </Text>
-
-                <Text style={styles.value}>
-                  {formatDate(endDate)}
-                </Text>
-
-              </View>
+              <Text
+                style={
+                  styles.dateText
+                }
+              >
+                {formatDateForUI(
+                  endDate
+                )}
+              </Text>
 
               <MaterialIcons
-                name="keyboard-arrow-right"
-                size={24}
+                name="keyboard-arrow-down"
+                size={22}
                 color="#718096"
               />
 
+            </TouchableOpacity>
+
+            <Text
+              style={
+                styles.helperText
+              }
+            >
+              This is the date saved
+              as the task due date.
+            </Text>
+
+          </View>
+          <View style={styles.card}>
+
+            <Text style={styles.label}>
+              Priority
+            </Text>
+
+            <View
+              style={
+                styles.priorityContainer
+              }
+            >
+
+              {[
+                'Low',
+                'Medium',
+                'High',
+              ].map((item) => {
+
+                const isSelected =
+                  priority === item;
+
+                return (
+                  <TouchableOpacity
+                    key={item}
+                    style={[
+                      styles.priorityButton,
+                      isSelected &&
+                        styles.prioritySelected,
+                    ]}
+                    onPress={() =>
+                      setPriority(
+                        item
+                      )
+                    }
+                    activeOpacity={0.8}
+                  >
+
+                    <MaterialIcons
+                      name="flag"
+                      size={17}
+                      color={
+                        isSelected
+                          ? '#FFFFFF'
+                          : item ===
+                            'High'
+                          ? '#E53E3E'
+                          : item ===
+                            'Medium'
+                          ? '#D69E2E'
+                          : '#3182CE'
+                      }
+                    />
+
+                    <Text
+                      style={[
+                        styles.priorityText,
+                        isSelected &&
+                          styles.priorityTextSelected,
+                      ]}
+                    >
+                      {item}
+                    </Text>
+
+                  </TouchableOpacity>
+                );
+              })}
+
             </View>
-          </TouchableOpacity>
 
-          {/* ================= INFO ================= */}
-
-          <View
-            style={[
-              styles.card,
-              styles.statusCard,
-            ]}
-          >
-            <View style={styles.cardContent}>
-
-              <View style={styles.iconContainer}>
-                <MaterialIcons
-                  name="info-outline"
-                  size={22}
-                  color="#6600FF"
-                />
-              </View>
-
-              <View style={styles.textContainer}>
-
-                <Text style={styles.label}>
-                  Task Group
-                </Text>
-
-                <Text
-                  style={styles.descriptionValue}
-                >
-                  {selectedGroup}
-                </Text>
-
-              </View>
-
-            </View>
           </View>
 
-          {/* ================= ADD BUTTON ================= */}
 
           <TouchableOpacity
             style={[
-              styles.addButton,
+              styles.createButton,
               saving &&
-                styles.addButtonDisabled,
+                styles.createButtonDisabled,
             ]}
-            onPress={handleAddProject}
-            activeOpacity={0.8}
+            onPress={
+              handleCreateTask
+            }
             disabled={saving}
+            activeOpacity={0.85}
           >
+
             {saving ? (
-              <View
-                style={styles.loadingContainer}
-              >
+
+              <>
                 <ActivityIndicator
+                  color="#FFFFFF"
                   size="small"
+                />
+
+                <Text
+                  style={
+                    styles.createButtonText
+                  }
+                >
+                  Creating...
+                </Text>
+              </>
+
+            ) : (
+
+              <>
+                <MaterialIcons
+                  name="add-task"
+                  size={21}
                   color="#FFFFFF"
                 />
 
                 <Text
-                  style={styles.addButtonText}
+                  style={
+                    styles.createButtonText
+                  }
                 >
-                  Adding...
+                  Create Task
                 </Text>
-              </View>
-            ) : (
-              <Text
-                style={styles.addButtonText}
-              >
-                Add Project
-              </Text>
+              </>
+
             )}
+
           </TouchableOpacity>
+
+          <View
+            style={
+              styles.bottomSpace
+            }
+          />
 
         </ScrollView>
 
-        {/* ================================================= */}
-        {/* GROUP DROPDOWN MODAL */}
-        {/* ================================================= */}
 
         <Modal
-          visible={showGroupDropdown}
+          visible={
+            categoryModalVisible
+          }
           transparent
           animationType="fade"
           onRequestClose={() =>
-            setShowGroupDropdown(false)
+            setCategoryModalVisible(
+              false
+            )
           }
         >
-          <TouchableOpacity
-            style={styles.dropdownModalOverlay}
-            activeOpacity={1}
-            onPress={() =>
-              setShowGroupDropdown(false)
+
+          <View
+            style={
+              styles.modalOverlay
             }
           >
+
             <View
-              style={styles.dropdownModalContent}
-              onStartShouldSetResponder={() => true}
+              style={
+                styles.modalContainer
+              }
             >
 
-              {taskGroups.map((group) => (
+              <View
+                style={
+                  styles.modalHeader
+                }
+              >
+
+                <Text
+                  style={
+                    styles.modalTitle
+                  }
+                >
+                  Add Category
+                </Text>
+
                 <TouchableOpacity
-                  key={group}
-                  style={styles.dropdownOption}
                   onPress={() => {
-                    setSelectedGroup(group);
-                    setShowGroupDropdown(false);
+                    setNewCategoryName(
+                      ''
+                    );
+
+                    setCategoryModalVisible(
+                      false
+                    );
                   }}
                 >
 
                   <MaterialIcons
-                    name={
-                      group === 'Work'
-                        ? 'work-outline'
-                        : group === 'Study'
-                        ? 'school'
-                        : 'person-outline'
-                    }
-                    size={22}
-                    color="#6600FF"
+                    name="close"
+                    size={25}
+                    color="#1A202C"
                   />
 
-                  <Text
-                    style={
-                      styles.dropdownOptionText
-                    }
-                  >
-                    {group}
-                  </Text>
-
-                  {selectedGroup === group && (
-                    <MaterialIcons
-                      name="check"
-                      size={22}
-                      color="#6600FF"
-                      style={{
-                        marginLeft: 'auto',
-                      }}
-                    />
-                  )}
-
                 </TouchableOpacity>
-              ))}
 
-              <View style={styles.divider} />
+              </View>
 
-              <TouchableOpacity
-                style={styles.addGroupOption}
-                onPress={() => {
-                  setShowGroupDropdown(false);
-                  setShowAddGroupModal(true);
-                }}
+              <Text
+                style={
+                  styles.modalLabel
+                }
               >
-                <MaterialIcons
-                  name="add"
-                  size={22}
-                  color="#6600FF"
-                />
-
-                <Text
-                  style={styles.addGroupText}
-                >
-                  Add Group
-                </Text>
-              </TouchableOpacity>
-
-            </View>
-          </TouchableOpacity>
-        </Modal>
-
-        {/* ================================================= */}
-        {/* ADD GROUP MODAL */}
-        {/* ================================================= */}
-
-        <Modal
-          visible={showAddGroupModal}
-          transparent
-          animationType="fade"
-          onRequestClose={() =>
-            setShowAddGroupModal(false)
-          }
-        >
-          <View style={styles.modalOverlay}>
-
-            <View style={styles.modalContent}>
-
-              <TouchableOpacity
-                style={styles.modalCloseButton}
-                onPress={() => {
-                  setShowAddGroupModal(false);
-                  setNewGroupName('');
-                }}
-              >
-                <MaterialIcons
-                  name="close"
-                  size={20}
-                  color="#718096"
-                />
-              </TouchableOpacity>
-
-              <Text style={styles.modalTitle}>
-                Add New Group
+                Category Name
               </Text>
 
               <TextInput
-                value={newGroupName}
-                onChangeText={setNewGroupName}
-                placeholder="Group name"
+                value={
+                  newCategoryName
+                }
+                onChangeText={
+                  setNewCategoryName
+                }
+                placeholder="e.g. University"
                 placeholderTextColor="#A0AEC0"
-                style={styles.modalInput}
+                style={
+                  styles.modalInput
+                }
                 autoFocus
+                maxLength={50}
               />
 
               <TouchableOpacity
-                style={styles.modalButton}
-                onPress={handleAddGroup}
+                style={[
+                  styles.modalCreateButton,
+                  creatingCategory &&
+                    styles.createButtonDisabled,
+                ]}
+                onPress={
+                  handleCreateCategory
+                }
+                disabled={
+                  creatingCategory
+                }
+                activeOpacity={0.85}
               >
-                <Text
-                  style={styles.modalButtonText}
-                >
-                  Add Group
-                </Text>
+
+                {creatingCategory ? (
+
+                  <ActivityIndicator
+                    color="#FFFFFF"
+                  />
+
+                ) : (
+
+                  <Text
+                    style={
+                      styles.modalCreateButtonText
+                    }
+                  >
+                    Create Category
+                  </Text>
+
+                )}
+
               </TouchableOpacity>
 
             </View>
 
           </View>
+
         </Modal>
 
-        {/* ================================================= */}
-        {/* START DATE MODAL */}
-        {/* ================================================= */}
+        {/* ================= DATE MODAL ================= */}
 
         <Modal
-          visible={showStartDatePicker}
+          visible={
+            dateModalVisible
+          }
           transparent
           animationType="fade"
           onRequestClose={() =>
-            setShowStartDatePicker(false)
+            setDateModalVisible(
+              false
+            )
           }
         >
+
           <View
-            style={styles.datePickerOverlay}
+            style={
+              styles.modalOverlay
+            }
           >
+
             <View
-              style={styles.datePickerContainer}
+              style={
+                styles.dateModalContainer
+              }
             >
 
               <View
-                style={styles.datePickerHeader}
+                style={
+                  styles.modalHeader
+                }
               >
 
                 <Text
-                  style={styles.datePickerTitle}
+                  style={
+                    styles.modalTitle
+                  }
                 >
-                  Start Date
+                  {dateType ===
+                  'start'
+                    ? 'Start Date'
+                    : 'Due Date'}
                 </Text>
 
                 <TouchableOpacity
                   onPress={() =>
-                    setShowStartDatePicker(false)
+                    setDateModalVisible(
+                      false
+                    )
                   }
                 >
+
                   <MaterialIcons
                     name="close"
-                    size={24}
-                    color="#718096"
+                    size={25}
+                    color="#1A202C"
                   />
+
                 </TouchableOpacity>
 
               </View>
 
+              <Text
+                style={
+                  styles.selectedDateText
+                }
+              >
+                {formatDateForUI(
+                  dateType ===
+                    'start'
+                    ? startDate
+                    : endDate
+                )}
+              </Text>
+
               <View
-                style={styles.datePickerColumns}
+                style={
+                  styles.dateControls
+                }
               >
 
-                {/* MONTH */}
-
-                <View
-                  style={styles.datePickerColumn}
+                <TouchableOpacity
+                  style={
+                    styles.dateControlButton
+                  }
+                  onPress={() =>
+                    changeDate(
+                      -1
+                    )
+                  }
                 >
-                  <Text
-                    style={
-                      styles.datePickerColumnLabel
-                    }
-                  >
-                    Month
-                  </Text>
 
-                  <ScrollView
-                    style={
-                      styles.datePickerScroll
-                    }
-                    showsVerticalScrollIndicator={
-                      false
-                    }
-                  >
-                    {months.map(
-                      (month, index) => (
-                        <TouchableOpacity
-                          key={month}
-                          style={[
-                            styles.datePickerOption,
-                            startDate.getMonth() ===
-                              index &&
-                              styles.datePickerOptionSelected,
-                          ]}
-                          onPress={() =>
-                            changeStartDate(
-                              'month',
-                              index
-                            )
-                          }
-                        >
-                          <Text
-                            style={[
-                              styles.datePickerOptionText,
-                              startDate.getMonth() ===
-                                index &&
-                                styles.datePickerOptionTextSelected,
-                            ]}
-                          >
-                            {month.substring(0, 3)}
-                          </Text>
-                        </TouchableOpacity>
-                      )
-                    )}
-                  </ScrollView>
-                </View>
+                  <MaterialIcons
+                    name="remove"
+                    size={25}
+                    color="#6600FF"
+                  />
 
-                {/* DAY */}
+                </TouchableOpacity>
 
-                <View
-                  style={styles.datePickerColumn}
+                <Text
+                  style={
+                    styles.dateControlText
+                  }
                 >
-                  <Text
-                    style={
-                      styles.datePickerColumnLabel
-                    }
-                  >
-                    Day
-                  </Text>
+                  Change Date
+                </Text>
 
-                  <ScrollView
-                    style={
-                      styles.datePickerScroll
-                    }
-                    showsVerticalScrollIndicator={
-                      false
-                    }
-                  >
-                    {startDays.map((day) => (
-                      <TouchableOpacity
-                        key={day}
-                        style={[
-                          styles.datePickerOption,
-                          startDate.getDate() ===
-                            day &&
-                            styles.datePickerOptionSelected,
-                        ]}
-                        onPress={() =>
-                          changeStartDate(
-                            'day',
-                            day
-                          )
-                        }
-                      >
-                        <Text
-                          style={[
-                            styles.datePickerOptionText,
-                            startDate.getDate() ===
-                              day &&
-                              styles.datePickerOptionTextSelected,
-                          ]}
-                        >
-                          {day}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-
-                {/* YEAR */}
-
-                <View
-                  style={styles.datePickerColumn}
+                <TouchableOpacity
+                  style={
+                    styles.dateControlButton
+                  }
+                  onPress={() =>
+                    changeDate(
+                      1
+                    )
+                  }
                 >
-                  <Text
-                    style={
-                      styles.datePickerColumnLabel
-                    }
-                  >
-                    Year
-                  </Text>
 
-                  <ScrollView
-                    style={
-                      styles.datePickerScroll
-                    }
-                    showsVerticalScrollIndicator={
-                      false
-                    }
-                  >
-                    {years.map((year) => (
-                      <TouchableOpacity
-                        key={year}
-                        style={[
-                          styles.datePickerOption,
-                          startDate.getFullYear() ===
-                            year &&
-                            styles.datePickerOptionSelected,
-                        ]}
-                        onPress={() =>
-                          changeStartDate(
-                            'year',
-                            year
-                          )
-                        }
-                      >
-                        <Text
-                          style={[
-                            styles.datePickerOptionText,
-                            startDate.getFullYear() ===
-                              year &&
-                              styles.datePickerOptionTextSelected,
-                          ]}
-                        >
-                          {year}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
+                  <MaterialIcons
+                    name="add"
+                    size={25}
+                    color="#6600FF"
+                  />
+
+                </TouchableOpacity>
 
               </View>
 
               <TouchableOpacity
                 style={
-                  styles.datePickerConfirmButton
+                  styles.doneDateButton
                 }
                 onPress={() =>
-                  setShowStartDatePicker(false)
+                  setDateModalVisible(
+                    false
+                  )
                 }
               >
+
                 <Text
                   style={
-                    styles.datePickerConfirmButtonText
+                    styles.doneDateButtonText
                   }
                 >
-                  Confirm
+                  Done
                 </Text>
+
               </TouchableOpacity>
 
             </View>
+
           </View>
+
         </Modal>
 
-        {/* ================================================= */}
-        {/* END DATE MODAL */}
-        {/* ================================================= */}
-
-        <Modal
-          visible={showEndDatePicker}
-          transparent
-          animationType="fade"
-          onRequestClose={() =>
-            setShowEndDatePicker(false)
-          }
-        >
-          <View
-            style={styles.datePickerOverlay}
-          >
-            <View
-              style={styles.datePickerContainer}
-            >
-
-              <View
-                style={styles.datePickerHeader}
-              >
-
-                <Text
-                  style={styles.datePickerTitle}
-                >
-                  End Date
-                </Text>
-
-                {/* CLOSE BUTTON */}
-
-                <TouchableOpacity
-                  onPress={() =>
-                    setShowEndDatePicker(false)
-                  }
-                >
-                  <MaterialIcons
-                    name="close"
-                    size={24}
-                    color="#718096"
-                  />
-                </TouchableOpacity>
-
-              </View>
-
-              <View
-                style={styles.datePickerColumns}
-              >
-
-                {/* MONTH */}
-
-                <View
-                  style={styles.datePickerColumn}
-                >
-                  <Text
-                    style={
-                      styles.datePickerColumnLabel
-                    }
-                  >
-                    Month
-                  </Text>
-
-                  <ScrollView
-                    style={
-                      styles.datePickerScroll
-                    }
-                    showsVerticalScrollIndicator={
-                      false
-                    }
-                  >
-                    {months.map(
-                      (month, index) => (
-                        <TouchableOpacity
-                          key={month}
-                          style={[
-                            styles.datePickerOption,
-                            endDate.getMonth() ===
-                              index &&
-                              styles.datePickerOptionSelected,
-                          ]}
-                          onPress={() =>
-                            changeEndDate(
-                              'month',
-                              index
-                            )
-                          }
-                        >
-                          <Text
-                            style={[
-                              styles.datePickerOptionText,
-                              endDate.getMonth() ===
-                                index &&
-                                styles.datePickerOptionTextSelected,
-                            ]}
-                          >
-                            {month.substring(0, 3)}
-                          </Text>
-                        </TouchableOpacity>
-                      )
-                    )}
-                  </ScrollView>
-                </View>
-
-                {/* DAY */}
-
-                <View
-                  style={styles.datePickerColumn}
-                >
-                  <Text
-                    style={
-                      styles.datePickerColumnLabel
-                    }
-                  >
-                    Day
-                  </Text>
-
-                  <ScrollView
-                    style={
-                      styles.datePickerScroll
-                    }
-                    showsVerticalScrollIndicator={
-                      false
-                    }
-                  >
-                    {endDays.map((day) => (
-                      <TouchableOpacity
-                        key={day}
-                        style={[
-                          styles.datePickerOption,
-                          endDate.getDate() ===
-                            day &&
-                            styles.datePickerOptionSelected,
-                        ]}
-                        onPress={() =>
-                          changeEndDate(
-                            'day',
-                            day
-                          )
-                        }
-                      >
-                        <Text
-                          style={[
-                            styles.datePickerOptionText,
-                            endDate.getDate() ===
-                              day &&
-                              styles.datePickerOptionTextSelected,
-                          ]}
-                        >
-                          {day}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-
-                {/* YEAR */}
-
-                <View
-                  style={styles.datePickerColumn}
-                >
-                  <Text
-                    style={
-                      styles.datePickerColumnLabel
-                    }
-                  >
-                    Year
-                  </Text>
-
-                  <ScrollView
-                    style={
-                      styles.datePickerScroll
-                    }
-                    showsVerticalScrollIndicator={
-                      false
-                    }
-                  >
-                    {years.map((year) => (
-                      <TouchableOpacity
-                        key={year}
-                        style={[
-                          styles.datePickerOption,
-                          endDate.getFullYear() ===
-                            year &&
-                            styles.datePickerOptionSelected,
-                        ]}
-                        onPress={() =>
-                          changeEndDate(
-                            'year',
-                            year
-                          )
-                        }
-                      >
-                        <Text
-                          style={[
-                            styles.datePickerOptionText,
-                            endDate.getFullYear() ===
-                              year &&
-                              styles.datePickerOptionTextSelected,
-                          ]}
-                        >
-                          {year}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-
-              </View>
-
-              <TouchableOpacity
-                style={
-                  styles.datePickerConfirmButton
-                }
-                onPress={() =>
-                  setShowEndDatePicker(false)
-                }
-              >
-                <Text
-                  style={
-                    styles.datePickerConfirmButtonText
-                  }
-                >
-                  Confirm
-                </Text>
-              </TouchableOpacity>
-
-            </View>
-          </View>
-        </Modal>
-
-      </View>
-    </LinearGradient>
+      </LinearGradient>
+    </SafeAreaView>
   );
 };
 
-// =====================================================
-// STYLES
-// =====================================================
 
-const styles = StyleSheet.create({
+const styles = {
 
   container: {
     flex: 1,
   },
 
-  gradientContainer: {
+  gradient: {
     flex: 1,
   },
 
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 50,
-    paddingBottom: 16,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+  },
+
+  headerButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+  },
+
+  headerPlaceholder: {
+    width: 42,
+    height: 42,
   },
 
   headerTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
     color: '#1A202C',
   },
 
-  scrollContent: {
-    paddingHorizontal: 24,
-    paddingBottom: 40,
+  content: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 30,
   },
 
   card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 15,
+    elevation: 3,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
       height: 2,
     },
     shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-
-  cardContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  iconWork: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: '#fedcf9',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-
-  iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: '#E9D8FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-
-  textContainer: {
-    flex: 1,
+    shadowRadius: 5,
   },
 
   label: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#718096',
-    marginBottom: 4,
-  },
-
-  value: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1A202C',
-  },
-
-  inputField: {
-    minHeight: 48,
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1A202C',
-  },
-
-  descriptionValue: {
     fontSize: 14,
-    fontWeight: '400',
-    color: '#4A5568',
-    lineHeight: 20,
+    fontWeight: '700',
+    color: '#1A202C',
+    marginBottom: 10,
+  },
+
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+
+  addCategoryText: {
+    color: '#6600FF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+
+  input: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    fontSize: 14,
+    color: '#1A202C',
+    backgroundColor: '#FAFCFF',
   },
 
   textArea: {
-    minHeight: 100,
-    textAlignVertical: 'top',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
+    minHeight: 110,
+    paddingTop: 14,
   },
 
-  statusCard: {
-    backgroundColor: '#E9D8FF',
-  },
-
-  addButton: {
-    width: '100%',
-    height: 56,
-    backgroundColor: '#6600FF',
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 20,
-
-    shadowColor: '#6600FF',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-
-  addButtonDisabled: {
-    opacity: 0.7,
-  },
-
-  loadingContainer: {
+  categoryLoading: {
+    minHeight: 55,
     flexDirection: 'row',
     alignItems: 'center',
   },
 
-  addButtonText: {
+  categoryLoadingText: {
+    marginLeft: 10,
+    fontSize: 13,
+    color: '#718096',
+  },
+
+  categoriesContainer: {
+    gap: 9,
+  },
+
+  categoryItem: {
+    minHeight: 48,
+    borderRadius: 12,
+    backgroundColor: '#F7FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  categoryItemSelected: {
+    backgroundColor: '#6600FF',
+    borderColor: '#6600FF',
+  },
+
+  categoryItemText: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4A5568',
+  },
+
+  categoryItemTextSelected: {
     color: '#FFFFFF',
-    fontSize: 22,
+  },
+
+  emptyCategory: {
+    alignItems: 'center',
+    paddingVertical: 15,
+  },
+
+  emptyCategoryText: {
+    marginTop: 7,
+    fontSize: 13,
+    color: '#718096',
+  },
+
+  createFirstCategoryButton: {
+    marginTop: 12,
+    paddingHorizontal: 15,
+    paddingVertical: 9,
+    borderRadius: 10,
+    backgroundColor: '#F0E6FF',
+  },
+
+  createFirstCategoryText: {
+    color: '#6600FF',
+    fontSize: 13,
     fontWeight: '700',
+  },
+
+  dateButton: {
+    height: 52,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FAFCFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+  },
+
+  dateIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: '#F0E6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+
+  dateText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1A202C',
+  },
+
+  helperText: {
+    marginTop: 7,
+    fontSize: 11,
+    color: '#A0AEC0',
+  },
+
+  priorityContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+
+  priorityButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FAFCFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+
+  prioritySelected: {
+    backgroundColor: '#6600FF',
+    borderColor: '#6600FF',
+  },
+
+  priorityText: {
+    marginLeft: 5,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4A5568',
+  },
+
+  priorityTextSelected: {
+    color: '#FFFFFF',
+  },
+
+  createButton: {
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: '#6600FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    elevation: 3,
+    marginTop: 2,
+  },
+
+  createButtonDisabled: {
+    opacity: 0.65,
+  },
+
+  createButtonText: {
+    marginLeft: 8,
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
+  bottomSpace: {
+    height: 20,
   },
 
   modalOverlay: {
     flex: 1,
-    backgroundColor:
-      'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 20,
   },
 
-  modalContent: {
+  modalContainer: {
+    width: '100%',
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    padding: 24,
-    width: '85%',
-    alignItems: 'center',
-
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 10,
-
-    position: 'relative',
+    padding: 20,
   },
 
-  modalCloseButton: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F0F0F0',
-    justifyContent: 'center',
+  dateModalContainer: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+  },
+
+  modalHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 20,
   },
 
   modalTitle: {
-    fontSize: 18,
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1A202C',
+  },
+
+  modalLabel: {
+    fontSize: 13,
     fontWeight: '700',
-    color: '#1A202C',
-    marginBottom: 16,
-    marginTop: 8,
-  },
-
-  modalInput: {
-    width: '100%',
-    height: 48,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    fontSize: 16,
-    marginBottom: 16,
-  },
-
-  modalButton: {
-    width: '100%',
-    height: 48,
-    backgroundColor: '#6600FF',
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  modalButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-
-  dropdownModalOverlay: {
-    flex: 1,
-    backgroundColor:
-      'rgba(0, 0, 0, 0.3)',
-    justifyContent: 'flex-start',
-    paddingTop: 200,
-  },
-
-  dropdownModalContent: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 8,
-    marginHorizontal: 24,
-
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-
-  dropdownOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-  },
-
-  dropdownOptionText: {
-    fontSize: 16,
-    color: '#1A202C',
-    marginLeft: 12,
-  },
-
-  addGroupOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: '#F0E6FF',
-    marginTop: 4,
-  },
-
-  addGroupText: {
-    fontSize: 16,
-    color: '#6600FF',
-    fontWeight: '600',
-    marginLeft: 12,
-  },
-
-  divider: {
-    height: 1,
-    backgroundColor: '#E2E8F0',
-    marginVertical: 4,
-  },
-
-  datePickerOverlay: {
-    flex: 1,
-    backgroundColor:
-      'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  datePickerContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 24,
-    width: '90%',
-    alignItems: 'center',
-
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-
-  datePickerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    width: '100%',
-    marginBottom: 20,
-  },
-
-  datePickerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1A202C',
-  },
-
-  datePickerColumns: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginBottom: 20,
-  },
-
-  datePickerColumn: {
-    flex: 1,
-    marginHorizontal: 4,
-  },
-
-  datePickerColumnLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#718096',
-    textAlign: 'center',
+    color: '#4A5568',
     marginBottom: 8,
   },
 
-  datePickerScroll: {
-    maxHeight: 200,
+  modalInput: {
+    height: 50,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderRadius: 8,
-  },
-
-  datePickerOption: {
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-  },
-
-  datePickerOptionSelected: {
-    backgroundColor: '#F0E6FF',
-  },
-
-  datePickerOptionText: {
+    borderRadius: 12,
+    paddingHorizontal: 14,
     fontSize: 14,
+    color: '#1A202C',
+    backgroundColor: '#FAFCFF',
+  },
+
+  modalCreateButton: {
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#6600FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 15,
+  },
+
+  modalCreateButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+
+  selectedDateText: {
+    textAlign: 'center',
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#6600FF',
+    marginBottom: 25,
+  },
+
+  dateControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  dateControlButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 13,
+    backgroundColor: '#F0E6FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  dateControlText: {
+    fontSize: 14,
+    fontWeight: '700',
     color: '#4A5568',
   },
 
-  datePickerOptionTextSelected: {
-    color: '#6600FF',
-    fontWeight: '600',
-  },
-
-  datePickerConfirmButton: {
-    width: '100%',
+  doneDateButton: {
     height: 48,
-    backgroundColor: '#6600FF',
     borderRadius: 12,
-    justifyContent: 'center',
+    backgroundColor: '#6600FF',
     alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 25,
   },
 
-  datePickerConfirmButtonText: {
+  doneDateButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
   },
-
-});
+};
 
 export default AddTaskScreen;

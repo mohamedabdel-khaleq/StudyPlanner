@@ -10,9 +10,7 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRoute } from '@react-navigation/native';
-
 import { useAuth } from '../context/AuthContext';
-
 import {
   getTaskById,
   completeTask,
@@ -23,18 +21,12 @@ import {
 const TaskDetailsScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-
   const { token } = useAuth();
-
   const { taskId } = route.params || {};
-
   const [task, setTask] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // =========================
-  // Load Task Details
-  // =========================
   const loadTask = async () => {
     if (!token || !taskId) {
       setLoading(false);
@@ -43,12 +35,20 @@ const TaskDetailsScreen = () => {
 
     try {
       setLoading(true);
-
+      console.log('Loading task details:', taskId);
       const data = await getTaskById(token, taskId);
-
+      console.log('Task details response:', data);
       setTask(data);
     } catch (error) {
       console.log('Get task details error:', error);
+      console.log(
+        'Get task details status:',
+        error?.response?.status
+      );
+      console.log(
+        'Get task details data:',
+        error?.response?.data
+      );
 
       Alert.alert(
         'Error',
@@ -58,14 +58,12 @@ const TaskDetailsScreen = () => {
       setLoading(false);
     }
   };
-
   useEffect(() => {
     loadTask();
   }, [token, taskId]);
 
-  // =========================
+
   // Complete / Undo
-  // =========================
   const handleToggleComplete = async () => {
     if (!token || !task) return;
 
@@ -73,14 +71,31 @@ const TaskDetailsScreen = () => {
       setActionLoading(true);
 
       if (task.completed) {
-        await undoTask(token, task.id);
+        console.log('Undo task:', task.id);
+
+        const response = await undoTask(
+          token,
+          task.id
+        );
+
+        console.log('Undo task response:', response);
 
         setTask((prev) => ({
           ...prev,
           completed: false,
         }));
       } else {
-        await completeTask(token, task.id);
+        console.log('Complete task:', task.id);
+
+        const response = await completeTask(
+          token,
+          task.id
+        );
+
+        console.log(
+          'Complete task response:',
+          response
+        );
 
         setTask((prev) => ({
           ...prev,
@@ -89,6 +104,14 @@ const TaskDetailsScreen = () => {
       }
     } catch (error) {
       console.log('Toggle task error:', error);
+      console.log(
+        'Toggle status:',
+        error?.response?.status
+      );
+      console.log(
+        'Toggle response:',
+        error?.response?.data
+      );
 
       Alert.alert(
         'Error',
@@ -99,9 +122,7 @@ const TaskDetailsScreen = () => {
     }
   };
 
-  // =========================
   // Delete Task
-  // =========================
   const handleDelete = () => {
     if (!task) return;
 
@@ -128,7 +149,17 @@ const TaskDetailsScreen = () => {
     try {
       setActionLoading(true);
 
-      await deleteTask(token, task.id);
+      console.log('Delete task:', task.id);
+
+      const response = await deleteTask(
+        token,
+        task.id
+      );
+
+      console.log(
+        'Delete task response:',
+        response
+      );
 
       Alert.alert(
         'Success',
@@ -142,6 +173,14 @@ const TaskDetailsScreen = () => {
       );
     } catch (error) {
       console.log('Delete task error:', error);
+      console.log(
+        'Delete status:',
+        error?.response?.status
+      );
+      console.log(
+        'Delete response:',
+        error?.response?.data
+      );
 
       Alert.alert(
         'Error',
@@ -152,9 +191,7 @@ const TaskDetailsScreen = () => {
     }
   };
 
-  // =========================
   // Edit Task
-  // =========================
   const handleEdit = () => {
     if (!task) return;
 
@@ -163,9 +200,7 @@ const TaskDetailsScreen = () => {
     });
   };
 
-  // =========================
   // Format Date
-  // =========================
   const formatDate = (dateString) => {
     if (!dateString) {
       return 'No due date';
@@ -185,11 +220,11 @@ const TaskDetailsScreen = () => {
     });
   };
 
-  // =========================
   // Priority Color
-  // =========================
   const getPriorityColor = (priority) => {
-    const value = String(priority || '').toLowerCase();
+    const value = String(
+      priority || ''
+    ).toLowerCase();
 
     if (value === 'high') {
       return '#E53E3E';
@@ -206,9 +241,19 @@ const TaskDetailsScreen = () => {
     return '#718096';
   };
 
-  // =========================
+  // Priority Label
+  const getPriorityLabel = (priority) => {
+    if (!priority) {
+      return 'Not specified';
+    }
+
+    return String(priority)
+      .charAt(0)
+      .toUpperCase() +
+      String(priority).slice(1).toLowerCase();
+  };
+
   // Loading
-  // =========================
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -224,9 +269,8 @@ const TaskDetailsScreen = () => {
     );
   }
 
-  // =========================
+
   // No Task
-  // =========================
   if (!task) {
     return (
       <View style={styles.loadingContainer}>
@@ -252,10 +296,18 @@ const TaskDetailsScreen = () => {
     );
   }
 
+  // Category
   const category =
     task.category_name ||
     task.category ||
     'No Category';
+
+  // Priority
+  const priorityColor =
+    getPriorityColor(task.priority);
+
+  const priorityLabel =
+    getPriorityLabel(task.priority);
 
   return (
     <View style={styles.container}>
@@ -272,12 +324,11 @@ const TaskDetailsScreen = () => {
         style={styles.gradient}
       >
 
-        {/* ================= HEADER ================= */}
-
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => navigation.goBack()}
             style={styles.headerIcon}
+            activeOpacity={0.8}
           >
             <MaterialIcons
               name="arrow-back"
@@ -293,6 +344,8 @@ const TaskDetailsScreen = () => {
           <TouchableOpacity
             onPress={handleEdit}
             style={styles.headerIcon}
+            disabled={actionLoading}
+            activeOpacity={0.8}
           >
             <MaterialIcons
               name="edit"
@@ -302,19 +355,12 @@ const TaskDetailsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        {/* ================= CONTENT ================= */}
-
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.content}
         >
 
-          {/* Main Card */}
-
           <View style={styles.mainCard}>
-
-            {/* Category */}
-
             <View style={styles.categoryRow}>
               <View style={styles.categoryIcon}>
                 <MaterialIcons
@@ -329,13 +375,9 @@ const TaskDetailsScreen = () => {
               </Text>
             </View>
 
-            {/* Title */}
-
             <Text style={styles.title}>
               {task.title || 'Untitled Task'}
             </Text>
-
-            {/* Description */}
 
             <Text style={styles.sectionTitle}>
               Description
@@ -347,11 +389,7 @@ const TaskDetailsScreen = () => {
                 : 'No description provided.'}
             </Text>
 
-            {/* Divider */}
-
             <View style={styles.divider} />
-
-            {/* Due Date */}
 
             <View style={styles.infoRow}>
               <View style={styles.infoIcon}>
@@ -373,22 +411,20 @@ const TaskDetailsScreen = () => {
               </View>
             </View>
 
-            {/* Priority */}
-
             <View style={styles.infoRow}>
               <View
                 style={[
                   styles.infoIcon,
                   {
                     backgroundColor:
-                      `${getPriorityColor(task.priority)}20`,
+                      `${priorityColor}20`,
                   },
                 ]}
               >
                 <MaterialIcons
                   name="flag"
                   size={20}
-                  color={getPriorityColor(task.priority)}
+                  color={priorityColor}
                 />
               </View>
 
@@ -401,13 +437,11 @@ const TaskDetailsScreen = () => {
                   style={[
                     styles.infoValue,
                     {
-                      color: getPriorityColor(
-                        task.priority
-                      ),
+                      color: priorityColor,
                     },
                   ]}
                 >
-                  {task.priority || 'Not specified'}
+                  {priorityLabel}
                 </Text>
               </View>
             </View>
@@ -419,9 +453,10 @@ const TaskDetailsScreen = () => {
                 style={[
                   styles.infoIcon,
                   {
-                    backgroundColor: task.completed
-                      ? '#E9D8FF'
-                      : '#E4F0FF',
+                    backgroundColor:
+                      task.completed
+                        ? '#E9D8FF'
+                        : '#E4F0FF',
                   },
                 ]}
               >
@@ -461,13 +496,10 @@ const TaskDetailsScreen = () => {
                 </Text>
               </View>
             </View>
-
           </View>
 
-          {/* ================= ACTIONS ================= */}
-
           <View style={styles.actionsCard}>
-
+ 
             <TouchableOpacity
               style={[
                 styles.completeButton,
@@ -524,6 +556,8 @@ const TaskDetailsScreen = () => {
               </Text>
             </TouchableOpacity>
 
+            {/* Delete */}
+
             <TouchableOpacity
               style={styles.deleteButton}
               onPress={handleDelete}
@@ -542,9 +576,7 @@ const TaskDetailsScreen = () => {
                 Delete Task
               </Text>
             </TouchableOpacity>
-
           </View>
-
         </ScrollView>
       </LinearGradient>
     </View>

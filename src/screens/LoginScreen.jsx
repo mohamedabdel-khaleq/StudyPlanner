@@ -1,6 +1,4 @@
-
 import React, { useState } from 'react';
-
 import {
   Alert,
   View,
@@ -13,14 +11,15 @@ import {
   ScrollView,
 } from 'react-native';
 
+import { Ionicons } from '@expo/vector-icons';
+
 import { useAuth } from '../context/AuthContext';
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-
+  const [showPassword, setShowPassword] = useState(false);
   const { login } = useAuth();
-
   const handleLogin = async () => {
     if (email.trim() === '' || password.trim() === '') {
       Alert.alert('Error', 'Please fill in all fields.');
@@ -56,6 +55,7 @@ const LoginScreen = ({ navigation }) => {
 
         {/* Title */}
         <View style={styles.titleContainer}>
+
           <Text style={styles.title}>
             Welcome Back
           </Text>
@@ -63,6 +63,7 @@ const LoginScreen = ({ navigation }) => {
           <Text style={styles.subtitle}>
             It's time to be productive
           </Text>
+
         </View>
 
         {/* Login Card */}
@@ -72,9 +73,13 @@ const LoginScreen = ({ navigation }) => {
           <View style={styles.cardHeader}>
 
             <View style={styles.loginIcon}>
-              <Text style={styles.iconText}>
-                ↪
-              </Text>
+
+              <Ionicons
+                name="log-in-outline"
+                size={24}
+                color="#6633E8"
+              />
+
             </View>
 
             <View style={styles.headerTextContainer}>
@@ -101,9 +106,12 @@ const LoginScreen = ({ navigation }) => {
 
           <View style={styles.inputContainer}>
 
-            <Text style={styles.inputIcon}>
-              👤
-            </Text>
+            <Ionicons
+              name="person-outline"
+              size={19}
+              color="#5E4B8B"
+              style={styles.inputIcon}
+            />
 
             <TextInput
               style={styles.input}
@@ -125,9 +133,12 @@ const LoginScreen = ({ navigation }) => {
 
           <View style={styles.inputContainer}>
 
-            <Text style={styles.inputIcon}>
-              🔒
-            </Text>
+            <Ionicons
+              name="lock-closed-outline"
+              size={19}
+              color="#5E4B8B"
+              style={styles.inputIcon}
+            />
 
             <TextInput
               style={styles.input}
@@ -135,9 +146,30 @@ const LoginScreen = ({ navigation }) => {
               placeholderTextColor="#A99BCF"
               value={password}
               onChangeText={setPassword}
-              secureTextEntry={true}
+              secureTextEntry={!showPassword}
               autoCapitalize="none"
+              autoCorrect={false}
             />
+
+            {/* Eye Button */}
+            <Pressable
+              style={styles.eyeButton}
+              onPress={() =>
+                setShowPassword((prev) => !prev)
+              }
+            >
+
+              <Ionicons
+                name={
+                  showPassword
+                    ? 'eye-off-outline'
+                    : 'eye-outline'
+                }
+                size={20}
+                color="#5E4B8B"
+              />
+
+            </Pressable>
 
           </View>
 
@@ -154,16 +186,15 @@ const LoginScreen = ({ navigation }) => {
               Let's Start
             </Text>
 
-            <Text style={styles.arrow}>
-              →
-            </Text>
-
+            <Ionicons
+              name="arrow-forward-outline"
+              size={22}
+              color="#FFFFFF"
+              style={styles.arrowIcon}
+            />
           </Pressable>
-
         </View>
-
       </ScrollView>
-
     </KeyboardAvoidingView>
   );
 };
@@ -205,11 +236,14 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     paddingHorizontal: 22,
     paddingVertical: 25,
+
     elevation: 4,
+
     shadowOffset: {
       width: 0,
       height: 4,
     },
+
     shadowOpacity: 0.08,
     shadowRadius: 12,
   },
@@ -223,16 +257,13 @@ const styles = StyleSheet.create({
     width: 43,
     height: 43,
     borderRadius: 22,
+
     backgroundColor: '#E9DDFF',
+
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
-  },
 
-  iconText: {
-    fontSize: 23,
-    color: '#6633E8',
-    fontWeight: '700',
+    marginRight: 12,
   },
 
   headerTextContainer: {
@@ -254,6 +285,7 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
     backgroundColor: '#D7D7D7',
+
     marginTop: 22,
     marginBottom: 24,
   },
@@ -262,45 +294,67 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#222222',
+
     marginBottom: 8,
   },
 
   inputContainer: {
     height: 48,
+
     backgroundColor: '#DCCEFF',
+
     borderRadius: 9,
+
     flexDirection: 'row',
     alignItems: 'center',
+
     paddingHorizontal: 12,
+
     marginBottom: 18,
   },
 
   inputIcon: {
-    fontSize: 16,
     marginRight: 8,
-    opacity: 0.45,
   },
 
   input: {
     flex: 1,
+
     height: '100%',
+
     fontSize: 13,
+
     color: '#333333',
+  },
+
+  eyeButton: {
+    width: 40,
+    height: 46,
+
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
   button: {
     height: 53,
+
     backgroundColor: '#5B2DE8',
+
     borderRadius: 11,
+
     marginTop: 22,
+
     flexDirection: 'row',
+
     justifyContent: 'center',
     alignItems: 'center',
+
     elevation: 4,
   },
 
   buttonPressed: {
     opacity: 0.75,
+
     transform: [
       {
         scale: 0.98,
@@ -310,13 +364,13 @@ const styles = StyleSheet.create({
 
   buttonText: {
     color: '#FFFFFF',
+
     fontSize: 15,
+
     fontWeight: '800',
   },
 
-  arrow: {
-    color: '#FFFFFF',
-    fontSize: 21,
+  arrowIcon: {
     marginLeft: 15,
   },
 

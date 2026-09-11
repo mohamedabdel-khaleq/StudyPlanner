@@ -5,32 +5,26 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-
 import { useAuth } from '../context/AuthContext';
-
 import {
   getCompletedTasks,
   undoTask,
 } from '../services/taskService';
+import BottomNav from '../screens/BottomNav';
 
 const CompletedTasksScreen = ({ navigation }) => {
   const { token } = useAuth();
-
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-
-  // =========================
-  // LOAD COMPLETED TASKS
-  // =========================
-
   const loadCompletedTasks = async () => {
     if (!token) {
+      setTasks([]);
       setLoading(false);
       return;
     }
@@ -40,7 +34,10 @@ const CompletedTasksScreen = ({ navigation }) => {
 
       const response = await getCompletedTasks(token);
 
-      console.log('Completed Tasks:', response);
+      console.log(
+        'Completed Tasks API Response:',
+        response
+      );
 
       let completedTasks = [];
 
@@ -48,11 +45,26 @@ const CompletedTasksScreen = ({ navigation }) => {
         completedTasks = response;
       } else if (Array.isArray(response?.tasks)) {
         completedTasks = response.tasks;
+      } else if (Array.isArray(response?.items)) {
+        completedTasks = response.items;
       }
+
+      // Show only completed tasks
+      completedTasks = completedTasks.filter(
+        (task) => task?.completed === true
+      );
 
       setTasks(completedTasks);
     } catch (error) {
-      console.log('Completed tasks error:', error);
+      console.log(
+        'Completed tasks error:',
+        error?.response?.data || error
+      );
+
+      console.log(
+        'Completed tasks status:',
+        error?.response?.status
+      );
 
       Alert.alert(
         'Error',
@@ -63,10 +75,6 @@ const CompletedTasksScreen = ({ navigation }) => {
     }
   };
 
-  // =========================
-  // LOAD WHEN SCREEN OPENS
-  // =========================
-
   useFocusEffect(
     useCallback(() => {
       loadCompletedTasks();
@@ -75,23 +83,35 @@ const CompletedTasksScreen = ({ navigation }) => {
     }, [token])
   );
 
-  // =========================
-  // UNDO TASK
-  // =========================
-
   const handleUndoTask = async (taskId) => {
-    if (!token || actionLoading) return;
+    if (!token || actionLoading) {
+      return;
+    }
 
     try {
       setActionLoading(true);
 
-      await undoTask(token, taskId);
+      console.log(
+        'Undoing task:',
+        taskId
+      );
+
+      const response = await undoTask(
+        token,
+        taskId
+      );
+
+      console.log(
+        'Undo API Response:',
+        response
+      );
 
       // Remove task from completed list
       setTasks((currentTasks) =>
         currentTasks.filter(
           (task) =>
-            String(task.id) !== String(taskId)
+            String(task.id) !==
+            String(taskId)
         )
       );
 
@@ -100,7 +120,15 @@ const CompletedTasksScreen = ({ navigation }) => {
         'Task moved back to To-do.'
       );
     } catch (error) {
-      console.log('Undo task error:', error);
+      console.log(
+        'Undo task error:',
+        error?.response?.data || error
+      );
+
+      console.log(
+        'Undo task status:',
+        error?.response?.status
+      );
 
       Alert.alert(
         'Error',
@@ -110,10 +138,6 @@ const CompletedTasksScreen = ({ navigation }) => {
       setActionLoading(false);
     }
   };
-
-  // =========================
-  // CONFIRM UNDO
-  // =========================
 
   const confirmUndo = (taskId) => {
     Alert.alert(
@@ -126,15 +150,12 @@ const CompletedTasksScreen = ({ navigation }) => {
         },
         {
           text: 'Yes',
-          onPress: () => handleUndoTask(taskId),
+          onPress: () =>
+            handleUndoTask(taskId),
         },
       ]
     );
   };
-
-  // =========================
-  // HELPERS
-  // =========================
 
   const getTaskTitle = (task) => {
     return (
@@ -169,16 +190,19 @@ const CompletedTasksScreen = ({ navigation }) => {
       const parsedDate = new Date(date);
 
       if (Number.isNaN(parsedDate.getTime())) {
-        return date;
+        return String(date);
       }
 
-      return parsedDate.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      });
+      return parsedDate.toLocaleDateString(
+        'en-US',
+        {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        }
+      );
     } catch {
-      return date;
+      return String(date);
     }
   };
 
@@ -198,16 +222,10 @@ const CompletedTasksScreen = ({ navigation }) => {
   };
 
   const getPriorityText = (priority) => {
-    if (!priority) {
-      return 'LOW';
-    }
-
-    return String(priority).toUpperCase();
+    return String(
+      priority || 'low'
+    ).toUpperCase();
   };
-
-  // =========================
-  // LOADING
-  // =========================
 
   if (loading) {
     return (
@@ -222,314 +240,341 @@ const CompletedTasksScreen = ({ navigation }) => {
             Loading completed tasks...
           </Text>
         </View>
+
+        <BottomNav
+          navigation={navigation}
+          activeScreen="CompletedScreen"
+        />
       </SafeAreaView>
     );
   }
 
-  // =========================
-  // UI
-  // =========================
-
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.content}
-      >
+      <View style={styles.screenWrapper}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.content}
+        >
+          <View style={styles.header}>
+            <Pressable
+              style={styles.backButton}
+              onPress={() =>
+                navigation.goBack()
+              }
+            >
+              <Text style={styles.backIcon}>
+                ‹
+              </Text>
+            </Pressable>
 
-        {/* ================= HEADER ================= */}
+            <View style={styles.headerCenter}>
+              <Text style={styles.headerTitle}>
+                Completed Tasks
+              </Text>
 
-        <View style={styles.header}>
+              <Text style={styles.headerSubtitle}>
+                {tasks.length} completed
+              </Text>
+            </View>
 
-          <Pressable
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <Text style={styles.backIcon}>
-              ‹
-            </Text>
-          </Pressable>
-
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>
-              Completed Tasks
-            </Text>
-
-            <Text style={styles.headerSubtitle}>
-              {tasks.length} completed
-            </Text>
+            <View style={styles.headerRight}>
+              <Text style={styles.headerCheck}>
+                ✓
+              </Text>
+            </View>
           </View>
 
-          <View style={styles.headerRight}>
-            <Text style={styles.headerCheck}>
-              ✓
-            </Text>
-          </View>
+          <View style={styles.summaryCard}>
 
-        </View>
-
-        {/* ================= SUMMARY CARD ================= */}
-
-        <View style={styles.summaryCard}>
-
-          <View style={styles.summaryIcon}>
-            <Text style={styles.summaryIconText}>
-              ✓
-            </Text>
-          </View>
-
-          <View style={styles.summaryInfo}>
-            <Text style={styles.summaryTitle}>
-              Great job! 🎉
-            </Text>
-
-            <Text style={styles.summaryText}>
-              You have completed {tasks.length}{' '}
-              {tasks.length === 1 ? 'task' : 'tasks'}.
-            </Text>
-          </View>
-
-          <Text style={styles.summaryNumber}>
-            {tasks.length}
-          </Text>
-
-        </View>
-
-        {/* ================= TASKS ================= */}
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>
-            Finished Tasks
-          </Text>
-        </View>
-
-        {tasks.length === 0 ? (
-          <View style={styles.emptyCard}>
-
-            <View style={styles.emptyIconContainer}>
-              <Text style={styles.emptyIcon}>
+            <View style={styles.summaryIcon}>
+              <Text style={styles.summaryIconText}>
                 ✓
               </Text>
             </View>
 
-            <Text style={styles.emptyTitle}>
-              No completed tasks
-            </Text>
+            <View style={styles.summaryInfo}>
 
-            <Text style={styles.emptyText}>
-              Complete your tasks and they will
-              appear here.
-            </Text>
-
-            <Pressable
-              style={styles.goPlannerButton}
-              onPress={() =>
-                navigation.navigate('PlannerScreen')
-              }
-            >
-              <Text style={styles.goPlannerText}>
-                Go to Planner
+              <Text style={styles.summaryTitle}>
+                Great job! 🎉
               </Text>
-            </Pressable>
 
+              <Text style={styles.summaryText}>
+                You have completed{' '}
+                {tasks.length}{' '}
+                {tasks.length === 1
+                  ? 'task'
+                  : 'tasks'}
+                .
+              </Text>
+
+            </View>
+
+            <Text style={styles.summaryNumber}>
+              {tasks.length}
+            </Text>
           </View>
-        ) : (
-          tasks.map((task, index) => (
 
-            <Pressable
-              key={task.id || index}
-              style={styles.taskCard}
-              onPress={() =>
-                navigation.navigate(
-                  'TaskDetailsScreen',
-                  {
-                    taskId: task.id,
-                  }
-                )
-              }
-            >
 
-              {/* TASK TOP */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>
+              Finished Tasks
+            </Text>
+          </View>
+          {tasks.length === 0 ? (
 
-              <View style={styles.taskTop}>
+            <View style={styles.emptyCard}>
 
-                <View style={styles.categoryContainer}>
-                  <View style={styles.categoryDot} />
-
-                  <Text style={styles.categoryText}>
-                    {getTaskCategory(task)}
-                  </Text>
-                </View>
-
-                <View style={styles.completedBadge}>
-                  <Text style={styles.completedBadgeText}>
-                    ✓ Done
-                  </Text>
-                </View>
-
+              <View
+                style={
+                  styles.emptyIconContainer
+                }
+              >
+                <Text style={styles.emptyIcon}>
+                  ✓
+                </Text>
               </View>
 
-              {/* TITLE */}
-
-              <Text
-                style={styles.taskTitle}
-                numberOfLines={2}
-              >
-                {getTaskTitle(task)}
+              <Text style={styles.emptyTitle}>
+                No completed tasks
               </Text>
 
-              {/* DESCRIPTION */}
+              <Text style={styles.emptyText}>
+                Complete your tasks and they
+                will appear here.
+              </Text>
 
-              {task.description ? (
-                <Text
-                  style={styles.description}
-                  numberOfLines={2}
-                >
-                  {task.description}
+              <Pressable
+                style={styles.goPlannerButton}
+                onPress={() =>
+                  navigation.navigate(
+                    'PlannerScreen'
+                  )
+                }
+              >
+                <Text style={styles.goPlannerText}>
+                  Go to Planner
                 </Text>
-              ) : null}
+              </Pressable>
+            </View>
+          ) : (
 
-              {/* INFO */}
 
-              <View style={styles.infoRow}>
+            tasks.map((task, index) => (
 
-                {task.due_date ? (
-                  <View style={styles.dateContainer}>
-                    <Text style={styles.infoIcon}>
-                      📅
+              <Pressable
+                key={
+                  task?.id
+                    ? String(task.id)
+                    : String(index)
+                }
+                style={styles.taskCard}
+                onPress={() =>
+                  navigation.navigate(
+                    'TaskDetailsScreen',
+                    {
+                      taskId: task.id,
+                    }
+                  )
+                }
+              >
+                <View style={styles.taskTop}>
+
+                  <View
+                    style={
+                      styles.categoryContainer
+                    }
+                  >
+
+                    <View
+                      style={
+                        styles.categoryDot
+                      }
+                    />
+
+                    <Text
+                      style={
+                        styles.categoryText
+                      }
+                    >
+                      {getTaskCategory(task)}
                     </Text>
 
-                    <Text style={styles.dateText}>
-                      {formatDate(task.due_date)}
+                  </View>
+
+                  <View
+                    style={
+                      styles.completedBadge
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.completedBadgeText
+                      }
+                    >
+                      ✓ Done
                     </Text>
                   </View>
-                ) : null}
 
-                <View
-                  style={[
-                    styles.priorityBadge,
-                    getPriorityStyle(task.priority),
-                  ]}
-                >
-                  <Text style={styles.priorityText}>
-                    {getPriorityText(task.priority)}
-                  </Text>
                 </View>
 
-              </View>
+                {/* TITLE */}
 
-              {/* ACTIONS */}
+                <Text
+                  style={styles.taskTitle}
+                  numberOfLines={2}
+                >
+                  {getTaskTitle(task)}
+                </Text>
 
-              <View style={styles.actionsRow}>
+                {/* DESCRIPTION */}
 
-                <Pressable
-                  style={styles.detailsButton}
-                  onPress={(event) => {
-                    event.stopPropagation();
+                {task?.description ? (
+                  <Text
+                    style={styles.description}
+                    numberOfLines={2}
+                  >
+                    {task.description}
+                  </Text>
+                ) : null}
 
-                    navigation.navigate(
-                      'TaskDetailsScreen',
-                      {
-                        taskId: task.id,
+                {/* INFO */}
+
+                <View style={styles.infoRow}>
+
+                  {task?.due_date ? (
+                    <View
+                      style={
+                        styles.dateContainer
                       }
-                    );
-                  }}
-                >
-                  <Text style={styles.detailsButtonText}>
-                    View Details
-                  </Text>
-                </Pressable>
+                    >
 
-                <Pressable
-                  style={styles.undoButton}
-                  onPress={(event) => {
-                    event.stopPropagation();
+                      <Text
+                        style={styles.infoIcon}
+                      >
+                        📅
+                      </Text>
 
-                    confirmUndo(task.id);
-                  }}
-                >
-                  <Text style={styles.undoButtonText}>
-                    Undo
-                  </Text>
-                </Pressable>
+                      <Text
+                        style={styles.dateText}
+                      >
+                        {formatDate(
+                          task.due_date
+                        )}
+                      </Text>
 
-              </View>
+                    </View>
+                  ) : (
+                    <View />
+                  )}
 
-            </Pressable>
-          ))
-        )}
+                  <View
+                    style={[
+                      styles.priorityBadge,
+                      getPriorityStyle(
+                        task?.priority
+                      ),
+                    ]}
+                  >
+                    <Text
+                      style={
+                        styles.priorityText
+                      }
+                    >
+                      {getPriorityText(
+                        task?.priority
+                      )}
+                    </Text>
+                  </View>
 
-        {/* ================= BOTTOM NAV ================= */}
+                </View>
 
-        <View style={styles.bottomNav}>
+                {/* ACTIONS */}
 
-          <Pressable
-            style={styles.navItem}
-            onPress={() =>
-              navigation.navigate('HomeScreen')
-            }
-          >
-            <Text style={styles.navIcon}>
-              🏠
-            </Text>
+                <View style={styles.actionsRow}>
 
-            <Text style={styles.navText}>
-              Home
-            </Text>
-          </Pressable>
+                  {/* DETAILS */}
 
-          <Pressable
-            style={styles.navItem}
-            onPress={() =>
-              navigation.navigate('PlannerScreen')
-            }
-          >
-            <Text style={styles.navIcon}>
-              📅
-            </Text>
+                  <Pressable
+                    style={
+                      styles.detailsButton
+                    }
+                    onPress={(event) => {
 
-            <Text style={styles.navText}>
-              Planner
-            </Text>
-          </Pressable>
+                      event.stopPropagation();
 
-          <Pressable style={styles.navItem}>
-            <Text style={styles.activeNavIcon}>
-              ✓
-            </Text>
+                      navigation.navigate(
+                        'TaskDetailsScreen',
+                        {
+                          taskId: task.id,
+                        }
+                      );
 
-            <Text style={styles.activeNavText}>
-              Completed
-            </Text>
-          </Pressable>
+                    }}
+                  >
+                    <Text
+                      style={
+                        styles.detailsButtonText
+                      }
+                    >
+                      View Details
+                    </Text>
+                  </Pressable>
 
-          <Pressable
-            style={styles.navItem}
-            onPress={() =>
-              navigation.navigate('CategoryScreen')
-            }
-          >
-            <Text style={styles.navIcon}>
-              📁
-            </Text>
+                  {/* UNDO */}
 
-            <Text style={styles.navText}>
-              Categories
-            </Text>
-          </Pressable>
+                  <Pressable
+                    style={[
+                      styles.undoButton,
+                      actionLoading &&
+                        styles.disabledButton,
+                    ]}
+                    disabled={actionLoading}
+                    onPress={(event) => {
 
-        </View>
+                      event.stopPropagation();
 
-      </ScrollView>
+                      confirmUndo(task.id);
+
+                    }}
+                  >
+                    {actionLoading ? (
+                      <ActivityIndicator
+                        size="small"
+                        color="#FFFFFF"
+                      />
+                    ) : (
+                      <Text
+                        style={
+                          styles.undoButtonText
+                        }
+                      >
+                        Undo
+                      </Text>
+                    )}
+                  </Pressable>
+
+                </View>
+
+              </Pressable>
+
+            ))
+          )}
+
+        </ScrollView>
+
+        <BottomNav
+          navigation={navigation}
+          activeScreen="CompletedScreen"
+        />
+
+      </View>
     </SafeAreaView>
   );
 };
 
 export default CompletedTasksScreen;
 
-// ======================================================
-// STYLES
-// ======================================================
 
 const styles = StyleSheet.create({
 
@@ -538,13 +583,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8F7FC',
   },
 
+  screenWrapper: {
+    flex: 1,
+  },
+
   content: {
     paddingHorizontal: 20,
     paddingTop: 20,
-    paddingBottom: 30,
+    paddingBottom: 120,
   },
-
-  // ================= HEADER =================
 
   header: {
     flexDirection: 'row',
@@ -608,8 +655,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
-  // ================= SUMMARY =================
-
   summaryCard: {
     backgroundColor: '#5B2DE8',
     borderRadius: 20,
@@ -665,7 +710,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
-  // ================= SECTION =================
 
   sectionHeader: {
     marginBottom: 13,
@@ -676,8 +720,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#171717',
   },
-
-  // ================= TASK CARD =================
 
   taskCard: {
     backgroundColor: '#FFFFFF',
@@ -749,8 +791,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
-  // ================= INFO =================
-
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -796,8 +836,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#E5F7EA',
   },
 
-  // ================= ACTIONS =================
-
   actionsRow: {
     flexDirection: 'row',
     marginTop: 14,
@@ -828,13 +866,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
+  disabledButton: {
+    opacity: 0.6,
+  },
+
   undoButtonText: {
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
   },
-
-  // ================= EMPTY =================
 
   emptyCard: {
     backgroundColor: '#FFFFFF',
@@ -895,57 +935,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // ================= BOTTOM NAV =================
-
-  bottomNav: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    paddingVertical: 12,
-    paddingHorizontal: 5,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: 20,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-  },
-
-  navItem: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 65,
-  },
-
-  navIcon: {
-    fontSize: 18,
-    marginBottom: 4,
-    opacity: 0.55,
-  },
-
-  activeNavIcon: {
-    fontSize: 18,
-    marginBottom: 4,
-    color: '#5B2DE8',
-  },
-
-  navText: {
-    fontSize: 10,
-    color: '#999',
-  },
-
-  activeNavText: {
-    fontSize: 10,
-    color: '#5B2DE8',
-    fontWeight: '700',
-  },
-
-  // ================= LOADING =================
-
   loadingContainer: {
     flex: 1,
     alignItems: 'center',
@@ -957,4 +946,5 @@ const styles = StyleSheet.create({
     color: '#777',
     fontSize: 14,
   },
+
 });

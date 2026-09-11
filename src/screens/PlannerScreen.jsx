@@ -6,10 +6,11 @@ import {
   StyleSheet,
   ScrollView,
   Pressable,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useFocusEffect } from '@react-navigation/native';
 
@@ -18,76 +19,56 @@ import { useAuth } from '../context/AuthContext';
 import {
   getDailyTasks,
   deleteTask,
+  completeTask,
+  undoTask,
 } from '../services/taskService';
+
+import BottomNav from '../screens/BottomNav';
 
 const PlannerScreen = ({ navigation }) => {
   const { token } = useAuth();
-
-  const [selectedDate, setSelectedDate] = useState(
-    new Date()
-  );
-
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const [tasks, setTasks] = useState([]);
-
   const [selectedFilter, setSelectedFilter] = useState('All');
-
   const [loading, setLoading] = useState(true);
-
   const [refreshing, setRefreshing] = useState(false);
 
-  // --------------------------------
-  // FORMAT DATE
-  // --------------------------------
-
+  // FORMAT DATE FOR API
   const formatDateForAPI = (date) => {
     const year = date.getFullYear();
-
     const month = String(
       date.getMonth() + 1
     ).padStart(2, '0');
-
     const day = String(
       date.getDate()
     ).padStart(2, '0');
-
     return `${year}-${month}-${day}`;
   };
 
-  // --------------------------------
-  // FORMAT DAY NAME
-  // --------------------------------
-
+  // DAY NAME
   const getDayName = (date) => {
-    return date.toLocaleDateString(
-      'en-US',
-      {
-        weekday: 'short',
-      }
-    );
+    return date.toLocaleDateString('en-US', {
+      weekday: 'short',
+    });
   };
 
-  // --------------------------------
-  // FORMAT MONTH
-  // --------------------------------
-
+  // MONTH NAME
   const getMonthName = (date) => {
-    return date.toLocaleDateString(
-      'en-US',
-      {
-        month: 'short',
-      }
-    );
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+    });
   };
 
-  // --------------------------------
+  // ========================================
   // LOAD DAILY TASKS
-  // --------------------------------
+  // ========================================
 
   const loadDailyTasks = async (
     date = selectedDate,
     isRefresh = false
   ) => {
     if (!token) {
+      setLoading(false);
       return;
     }
 
@@ -106,11 +87,10 @@ const PlannerScreen = ({ navigation }) => {
         formattedDate
       );
 
-      const data =
-        await getDailyTasks(
-          token,
-          formattedDate
-        );
+      const data = await getDailyTasks(
+        token,
+        formattedDate
+      );
 
       console.log(
         'Daily Planner Tasks:',
@@ -119,6 +99,8 @@ const PlannerScreen = ({ navigation }) => {
 
       if (Array.isArray(data)) {
         setTasks(data);
+      } else if (Array.isArray(data?.tasks)) {
+        setTasks(data.tasks);
       } else {
         setTasks([]);
       }
@@ -142,9 +124,9 @@ const PlannerScreen = ({ navigation }) => {
     }
   };
 
-  // --------------------------------
+  // ========================================
   // LOAD WHEN SCREEN OPENS
-  // --------------------------------
+  // ========================================
 
   useFocusEffect(
     useCallback(() => {
@@ -154,29 +136,17 @@ const PlannerScreen = ({ navigation }) => {
     }, [token, selectedDate])
   );
 
-  // --------------------------------
-  // GENERATE DATES
-  // --------------------------------
-
   const dates = useMemo(() => {
     const result = [];
-
     for (let i = -2; i <= 2; i++) {
       const date = new Date(selectedDate);
-
       date.setDate(
         selectedDate.getDate() + i
       );
-
       result.push(date);
     }
-
     return result;
   }, [selectedDate]);
-
-  // --------------------------------
-  // FILTER TASKS
-  // --------------------------------
 
   const filteredTasks = useMemo(() => {
     if (selectedFilter === 'All') {
@@ -189,30 +159,76 @@ const PlannerScreen = ({ navigation }) => {
       );
     }
 
-    if (selectedFilter === 'To do') {
+    if (
+      selectedFilter === 'To do' ||
+      selectedFilter === 'In Progress'
+    ) {
       return tasks.filter(
-        (task) =>
-          task.completed === false
-      );
-    }
-
-    if (selectedFilter === 'In Progress') {
-      return tasks.filter(
-        (task) =>
-          task.completed === false
+        (task) => task.completed !== true
       );
     }
 
     return tasks;
   }, [tasks, selectedFilter]);
 
-  // --------------------------------
-  // DELETE TASK
-  // --------------------------------
-
-  const handleDelete = (
-    taskId
+  const handleToggleComplete = async (
+    task
   ) => {
+    if (!token || !task?.id) {
+      return;
+    }
+
+    try {
+      if (task.completed) {
+        await undoTask(
+          token,
+          task.id
+        );
+
+        setTasks((currentTasks) =>
+          currentTasks.map((item) =>
+            item.id === task.id
+              ? {
+                  ...item,
+                  completed: false,
+                }
+              : item
+          )
+        );
+      } else {
+        await completeTask(
+          token,
+          task.id
+        );
+
+        setTasks((currentTasks) =>
+          currentTasks.map((item) =>
+            item.id === task.id
+              ? {
+                  ...item,
+                  completed: true,
+                }
+              : item
+          )
+        );
+      }
+    } catch (error) {
+      console.log(
+        'Toggle task error:',
+        error?.response?.data ||
+          error?.message ||
+          error
+      );
+
+      Alert.alert(
+        'Error',
+        'Could not update task status.'
+      );
+    }
+  };
+
+
+  const handleDelete = (taskId) => {
     Alert.alert(
       'Delete Task',
       'Are you sure you want to delete this task?',
@@ -224,6 +240,7 @@ const PlannerScreen = ({ navigation }) => {
         {
           text: 'Delete',
           style: 'destructive',
+
           onPress: async () => {
             try {
               await deleteTask(
@@ -262,16 +279,12 @@ const PlannerScreen = ({ navigation }) => {
     );
   };
 
-  // --------------------------------
-  // PRIORITY
-  // --------------------------------
-
   const getPriorityStyle = (
     priority
   ) => {
-    const value =
-      String(priority || '')
-        .toLowerCase();
+    const value = String(
+      priority || ''
+    ).toLowerCase();
 
     if (value === 'high') {
       return styles.highPriority;
@@ -284,6 +297,7 @@ const PlannerScreen = ({ navigation }) => {
     return styles.lowPriority;
   };
 
+
   const getPriorityText = (
     priority
   ) => {
@@ -292,13 +306,7 @@ const PlannerScreen = ({ navigation }) => {
     ).toUpperCase();
   };
 
-  // --------------------------------
-  // TASK STATUS
-  // --------------------------------
-
-  const getStatusText = (
-    task
-  ) => {
+  const getStatusText = (task) => {
     if (task.completed) {
       return 'Completed';
     }
@@ -306,33 +314,19 @@ const PlannerScreen = ({ navigation }) => {
     return 'To do';
   };
 
-  // --------------------------------
-  // SELECT DATE
-  // --------------------------------
-
-  const handleDateSelect = (
-    date
-  ) => {
+  const handleDateSelect = (date) => {
     setSelectedDate(date);
     setSelectedFilter('All');
   };
 
-  // --------------------------------
-  // RENDER
-  // --------------------------------
-
   return (
     <SafeAreaView
       style={styles.container}
+      edges={['top', 'bottom']}
     >
-
       <ScrollView
-        showsVerticalScrollIndicator={
-          false
-        }
-        contentContainerStyle={
-          styles.content
-        }
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.content}
         refreshing={refreshing}
         onRefresh={() =>
           loadDailyTasks(
@@ -342,7 +336,7 @@ const PlannerScreen = ({ navigation }) => {
         }
       >
 
-        {/* HEADER */}
+        {/* ================= HEADER ================= */}
 
         <View style={styles.header}>
 
@@ -362,7 +356,9 @@ const PlannerScreen = ({ navigation }) => {
               Planner
             </Text>
 
-            <Text style={styles.headerSubtitle}>
+            <Text
+              style={styles.headerSubtitle}
+            >
               Plan your day
             </Text>
           </View>
@@ -384,11 +380,9 @@ const PlannerScreen = ({ navigation }) => {
 
         </View>
 
-
-        {/* SELECTED DATE */}
+        {/* ================= MONTH ================= */}
 
         <View style={styles.monthHeader}>
-
           <Text style={styles.monthText}>
             {selectedDate.toLocaleDateString(
               'en-US',
@@ -398,11 +392,9 @@ const PlannerScreen = ({ navigation }) => {
               }
             )}
           </Text>
-
         </View>
 
-
-        {/* DATES */}
+        {/* ================= DATES ================= */}
 
         <ScrollView
           horizontal
@@ -413,13 +405,9 @@ const PlannerScreen = ({ navigation }) => {
             styles.dateList
           }
         >
-
           {dates.map((date) => {
-
             const isSelected =
-              formatDateForAPI(
-                date
-              ) ===
+              formatDateForAPI(date) ===
               formatDateForAPI(
                 selectedDate
               );
@@ -440,7 +428,6 @@ const PlannerScreen = ({ navigation }) => {
                     styles.selectedDateCard,
                 ]}
               >
-
                 <Text
                   style={[
                     styles.dayName,
@@ -470,15 +457,12 @@ const PlannerScreen = ({ navigation }) => {
                 >
                   {getMonthName(date)}
                 </Text>
-
               </Pressable>
             );
           })}
-
         </ScrollView>
 
-
-        {/* FILTERS */}
+        {/* ================= FILTERS ================= */}
 
         <ScrollView
           horizontal
@@ -489,14 +473,12 @@ const PlannerScreen = ({ navigation }) => {
             styles.filterList
           }
         >
-
           {[
             'All',
             'To do',
             'In Progress',
             'Completed',
           ].map((filter) => {
-
             const active =
               selectedFilter === filter;
 
@@ -514,7 +496,6 @@ const PlannerScreen = ({ navigation }) => {
                     styles.activeFilterButton,
                 ]}
               >
-
                 <Text
                   style={[
                     styles.filterText,
@@ -524,57 +505,60 @@ const PlannerScreen = ({ navigation }) => {
                 >
                   {filter}
                 </Text>
-
               </Pressable>
             );
           })}
-
         </ScrollView>
 
-
-        {/* TASK HEADER */}
+        {/* ================= TASK HEADER ================= */}
 
         <View style={styles.tasksHeader}>
-
           <Text style={styles.sectionTitle}>
-            Today's Tasks
+            {selectedDate.toLocaleDateString(
+              'en-US',
+              {
+                weekday: 'long',
+              }
+            )}{' '}
+            Tasks
           </Text>
 
           <Text style={styles.taskCount}>
             {filteredTasks.length}
           </Text>
-
         </View>
 
-
-        {/* LOADING */}
+        {/* ================= LOADING ================= */}
 
         {loading ? (
-
-          <View style={styles.loadingContainer}>
-
+          <View
+            style={
+              styles.loadingContainer
+            }
+          >
             <ActivityIndicator
               size="large"
               color="#5B2DE8"
             />
 
-            <Text style={styles.loadingText}>
+            <Text
+              style={styles.loadingText}
+            >
               Loading tasks...
             </Text>
-
           </View>
-
         ) : filteredTasks.length === 0 ? (
 
-          /* EMPTY */
+          /* ================= EMPTY ================= */
 
           <View style={styles.emptyCard}>
-
             <Text style={styles.emptyIcon}>
               📋
             </Text>
 
-            <Text style={styles.emptyTitle}>
+            <Text
+              style={styles.emptyTitle}
+            >
               No tasks found
             </Text>
 
@@ -599,22 +583,23 @@ const PlannerScreen = ({ navigation }) => {
                 Add Task
               </Text>
             </Pressable>
-
           </View>
 
         ) : (
 
-          /* TASK LIST */
+          /* ================= TASK LIST ================= */
 
           filteredTasks.map(
             (task, index) => (
-
               <Pressable
                 key={
-                  task.id ||
-                  index
+                  task.id || index
                 }
-                style={styles.taskCard}
+                style={[
+                  styles.taskCard,
+                  task.completed &&
+                    styles.completedCard,
+                ]}
                 onPress={() =>
                   navigation.navigate(
                     'TaskDetailsScreen',
@@ -629,17 +614,13 @@ const PlannerScreen = ({ navigation }) => {
                 {/* TOP */}
 
                 <View
-                  style={
-                    styles.taskTop
-                  }
+                  style={styles.taskTop}
                 >
-
                   <View
                     style={
                       styles.categoryContainer
                     }
                   >
-
                     <View
                       style={[
                         styles.categoryDot,
@@ -656,7 +637,6 @@ const PlannerScreen = ({ navigation }) => {
                       {task.category_name ||
                         'Task'}
                     </Text>
-
                   </View>
 
                   <View
@@ -667,7 +647,6 @@ const PlannerScreen = ({ navigation }) => {
                       ),
                     ]}
                   >
-
                     <Text
                       style={
                         styles.priorityText
@@ -677,11 +656,8 @@ const PlannerScreen = ({ navigation }) => {
                         task.priority
                       )}
                     </Text>
-
                   </View>
-
                 </View>
-
 
                 {/* TITLE */}
 
@@ -697,11 +673,9 @@ const PlannerScreen = ({ navigation }) => {
                     'Untitled Task'}
                 </Text>
 
-
                 {/* DESCRIPTION */}
 
                 {task.description ? (
-
                   <Text
                     style={
                       styles.description
@@ -710,9 +684,7 @@ const PlannerScreen = ({ navigation }) => {
                   >
                     {task.description}
                   </Text>
-
                 ) : null}
-
 
                 {/* BOTTOM */}
 
@@ -722,16 +694,26 @@ const PlannerScreen = ({ navigation }) => {
                   }
                 >
 
-                  <View
+                  {/* STATUS */}
+
+                  <Pressable
                     style={
                       styles.statusContainer
                     }
-                  >
+                    onPress={(event) => {
+                      event.stopPropagation();
 
+                      handleToggleComplete(
+                        task
+                      );
+                    }}
+                  >
                     <Text
-                      style={
-                        styles.statusIcon
-                      }
+                      style={[
+                        styles.statusIcon,
+                        task.completed &&
+                          styles.completedStatusIcon,
+                      ]}
                     >
                       {task.completed
                         ? '✓'
@@ -749,23 +731,18 @@ const PlannerScreen = ({ navigation }) => {
                         task
                       )}
                     </Text>
+                  </Pressable>
 
-                  </View>
-
+                  {/* ACTIONS */}
 
                   <View
-                    style={
-                      styles.actions
-                    }
+                    style={styles.actions}
                   >
-
                     <Pressable
                       style={
                         styles.editButton
                       }
-                      onPress={(
-                        event
-                      ) => {
+                      onPress={(event) => {
                         event.stopPropagation();
 
                         navigation.navigate(
@@ -786,14 +763,11 @@ const PlannerScreen = ({ navigation }) => {
                       </Text>
                     </Pressable>
 
-
                     <Pressable
                       style={
                         styles.deleteButton
                       }
-                      onPress={(
-                        event
-                      ) => {
+                      onPress={(event) => {
                         event.stopPropagation();
 
                         handleDelete(
@@ -809,116 +783,19 @@ const PlannerScreen = ({ navigation }) => {
                         Delete
                       </Text>
                     </Pressable>
-
                   </View>
 
                 </View>
-
               </Pressable>
-
             )
           )
-
         )}
 
       </ScrollView>
-
-
-      {/* BOTTOM NAV */}
-
-      <View style={styles.bottomNav}>
-
-        <Pressable
-          onPress={() =>
-            navigation.navigate(
-              'HomeScreen'
-            )
-          }
-        >
-          <Text style={styles.navIcon}>
-            ⌂
-          </Text>
-
-          <Text style={styles.navLabel}>
-            Home
-          </Text>
-        </Pressable>
-
-
-        <Pressable>
-          <Text
-            style={[
-              styles.navIcon,
-              styles.activeNavIcon,
-            ]}
-          >
-            ▣
-          </Text>
-
-          <Text
-            style={[
-              styles.navLabel,
-              styles.activeNavLabel,
-            ]}
-          >
-            Planner
-          </Text>
-        </Pressable>
-
-
-        <View style={styles.navSpace} />
-
-
-        <Pressable
-          onPress={() =>
-            navigation.navigate(
-              'CompletedScreen'
-            )
-          }
-        >
-          <Text style={styles.navIcon}>
-            ✓
-          </Text>
-
-          <Text style={styles.navLabel}>
-            Done
-          </Text>
-        </Pressable>
-
-
-        <Pressable
-          onPress={() =>
-            navigation.navigate(
-              'CategoryScreen'
-            )
-          }
-        >
-          <Text style={styles.navIcon}>
-            ≡
-          </Text>
-
-          <Text style={styles.navLabel}>
-            Categories
-          </Text>
-        </Pressable>
-
-      </View>
-
-
-      {/* FLOATING BUTTON */}
-
-      <Pressable
-        style={styles.floatingButton}
-        onPress={() =>
-          navigation.navigate(
-            'AddTask'
-          )
-        }
-      >
-        <Text style={styles.plus}>
-          +
-        </Text>
-      </Pressable>
+      <BottomNav
+        navigation={navigation}
+        activeScreen="PlannerScreen"
+      />
 
     </SafeAreaView>
   );
@@ -926,10 +803,6 @@ const PlannerScreen = ({ navigation }) => {
 
 export default PlannerScreen;
 
-
-// ========================================
-// STYLES
-// ========================================
 
 const styles = StyleSheet.create({
 
@@ -941,7 +814,7 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 18,
     paddingTop: 18,
-    paddingBottom: 110,
+    paddingBottom: 120,
   },
 
   // HEADER
@@ -1062,8 +935,6 @@ const styles = StyleSheet.create({
     color: '#DDD2FF',
   },
 
-  // FILTERS
-
   filterList: {
     paddingVertical: 18,
     paddingRight: 10,
@@ -1091,8 +962,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
 
-  // TASK HEADER
-
   tasksHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1118,8 +987,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
-  // LOADING
-
   loadingContainer: {
     minHeight: 220,
     justifyContent: 'center',
@@ -1131,8 +998,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#999999',
   },
-
-  // EMPTY
 
   emptyCard: {
     backgroundColor: '#F8F5FF',
@@ -1174,24 +1039,22 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
-  // TASK CARD
-
   taskCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 17,
     padding: 15,
     marginBottom: 12,
-
     elevation: 3,
-
     shadowOffset: {
       width: 0,
       height: 2,
     },
-
     shadowOpacity: 0.08,
-
     shadowRadius: 6,
+  },
+
+  completedCard: {
+    opacity: 0.82,
   },
 
   taskTop: {
@@ -1289,6 +1152,10 @@ const styles = StyleSheet.create({
     marginRight: 5,
   },
 
+  completedStatusIcon: {
+    color: '#32A852',
+  },
+
   statusText: {
     fontSize: 10,
     fontWeight: '700',
@@ -1329,88 +1196,6 @@ const styles = StyleSheet.create({
     fontSize: 9,
     color: '#E74C3C',
     fontWeight: '800',
-  },
-
-  // BOTTOM NAV
-
-  bottomNav: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 65,
-    backgroundColor: '#F0E9FF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-
-    paddingHorizontal: 15,
-  },
-
-  navIcon: {
-    fontSize: 19,
-    color: '#999999',
-    textAlign: 'center',
-  },
-
-  activeNavIcon: {
-    color: '#5B2DE8',
-  },
-
-  navLabel: {
-    fontSize: 7,
-    color: '#999999',
-    textAlign: 'center',
-    marginTop: 2,
-  },
-
-  activeNavLabel: {
-    color: '#5B2DE8',
-    fontWeight: '800',
-  },
-
-  navSpace: {
-    width: 45,
-  },
-
-  // FLOATING BUTTON
-
-  floatingButton: {
-    position: 'absolute',
-    bottom: 38,
-    left: '50%',
-
-    marginLeft: -24,
-
-    width: 48,
-    height: 48,
-
-    borderRadius: 24,
-
-    backgroundColor: '#5B2DE8',
-
-    justifyContent: 'center',
-    alignItems: 'center',
-
-    elevation: 7,
-
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-
-    shadowOpacity: 0.25,
-
-    shadowRadius: 5,
-  },
-
-  plus: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: '300',
   },
 
 });

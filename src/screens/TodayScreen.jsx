@@ -1,7 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { MaterialIcons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
-import { LinearGradient } from 'expo-linear-gradient';
+import React, { useCallback, useMemo, useState } from 'react';
+import { MaterialIcons, Feather, Ionicons } from '@expo/vector-icons';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import {
   Alert,
   ActivityIndicator,
@@ -10,35 +9,28 @@ import {
   Text,
   TouchableOpacity,
   View,
+  StyleSheet,
+  Pressable,
 } from 'react-native';
-
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import {
   getTasks,
   deleteTask as deleteTaskAPI,
-  completeTask as completeTaskAPI,
-  undoTask as undoTaskAPI,
 } from '../services/taskService';
-
-import styles from './styles';
 
 const TodayScreen = () => {
   const navigation = useNavigation();
   const { token } = useAuth();
-
   const [tasks, setTasks] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [activeFilter, setActiveFilter] = useState('All');
-
   const [loading, setLoading] = useState(true);
-
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState(null);
 
-  // =========================
-  // Date Helpers
-  // =========================
 
+  // Date Helpers
   const formatDateToISO = (date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -55,10 +47,7 @@ const TodayScreen = () => {
     );
   };
 
-  // =========================
   // Load Tasks
-  // =========================
-
   const loadTasks = async () => {
     if (!token) {
       setLoading(false);
@@ -67,7 +56,6 @@ const TodayScreen = () => {
 
     try {
       setLoading(true);
-
       const data = await getTasks(token);
 
       const tasksArray = Array.isArray(data)
@@ -79,98 +67,50 @@ const TodayScreen = () => {
       setTasks(tasksArray);
     } catch (error) {
       console.log('Today tasks error:', error);
-
-      Alert.alert(
-        'Error',
-        'Could not load your tasks. Please try again.'
-      );
+      Alert.alert('Error', 'Could not load your tasks. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    loadTasks();
-  }, [token]);
+  useFocusEffect(
+    useCallback(() => {
+      loadTasks();
+    }, [token])
+  );
 
-  // =========================
-  // Week Days
-  // =========================
-
+  // Week Days Slider
   const weekDays = useMemo(() => {
     const days = [];
-
-    for (let i = -3; i <= 3; i++) {
-      const date = new Date(selectedDate);
+    const today = new Date();
+    for (let i = -2; i <= 2; i++) {
+      const date = new Date(today);
       date.setDate(date.getDate() + i);
       days.push(date);
     }
-
     return days;
-  }, [selectedDate]);
+  }, []);
 
-  // =========================
-  // Convert API Status
-  // =========================
 
-  const getTaskStatus = (task) => {
-    if (task.completed === true) {
-      return 'Done';
-    }
-
-    // لو الـ backend عنده status بالفعل
-    if (
-      task.status === 'In Progress' ||
-      task.status === 'To-do' ||
-      task.status === 'Done'
-    ) {
-      return task.status;
-    }
-
-    return 'To-do';
-  };
-
-  // =========================
   // Filter Tasks
-  // =========================
-
   const filteredTasks = useMemo(() => {
     const selectedDateISO = formatDateToISO(selectedDate);
-
     return tasks.filter((task) => {
       const taskDate = task.due_date || task.date;
-
-      if (!taskDate) {
-        return false;
-      }
-
-      if (taskDate.split('T')[0] !== selectedDateISO) {
-        return false;
-      }
-
-      const status = getTaskStatus(task);
-
-      if (activeFilter === 'All') {
-        return true;
-      }
-
-      return status === activeFilter;
+      if (!taskDate) return true; 
+      if (taskDate.split('T')[0] !== selectedDateISO) return false;
+      if (activeFilter === 'All') return true;
+      if (activeFilter === 'To do') return !task.completed;
+      if (activeFilter === 'In Progress') return !task.completed;
+      if (activeFilter === 'Completed') return task.completed;
+      return true;
     });
   }, [tasks, activeFilter, selectedDate]);
 
-  // =========================
-  // Edit
-  // =========================
-
+  // Actions
   const handleEdit = (taskId) => {
-    navigation.navigate('EditTask', {
-      taskId,
-    });
+    navigation.navigate('EditTask', { taskId });
   };
-
-  // =========================
-  // Delete
-  // =========================
 
   const handleDeletePress = (taskId) => {
     setTaskToDelete(taskId);
@@ -179,28 +119,19 @@ const TodayScreen = () => {
 
   const confirmDelete = async () => {
     if (taskToDelete === null || !token) {
+      setShowDeleteModal(false);
       return;
     }
 
     try {
       await deleteTaskAPI(token, taskToDelete);
-
       setTasks((prevTasks) =>
-        prevTasks.filter(
-          (task) => String(task.id) !== String(taskToDelete)
-        )
+        prevTasks.filter((task) => String(task.id) !== String(taskToDelete))
       );
-
-      setShowDeleteModal(false);
-      setTaskToDelete(null);
     } catch (error) {
       console.log('Delete task error:', error);
-
-      Alert.alert(
-        'Error',
-        'Could not delete the task.'
-      );
-
+      Alert.alert('Error', 'Could not delete the task.');
+    } finally {
       setShowDeleteModal(false);
       setTaskToDelete(null);
     }
@@ -211,237 +142,66 @@ const TodayScreen = () => {
     setTaskToDelete(null);
   };
 
-  // =========================
-  // Complete / Undo
-  // =========================
-
-  const handleToggleComplete = async (task) => {
-    if (!token) {
-      return;
-    }
-
-    try {
-      if (task.completed) {
-        await undoTaskAPI(token, task.id);
-      } else {
-        await completeTaskAPI(token, task.id);
-      }
-
-      setTasks((prevTasks) =>
-        prevTasks.map((item) =>
-          String(item.id) === String(task.id)
-            ? {
-                ...item,
-                completed: !item.completed,
-              }
-            : item
-        )
-      );
-    } catch (error) {
-      console.log('Complete task error:', error);
-
-      Alert.alert(
-        'Error',
-        'Could not update the task status.'
-      );
-    }
-  };
-
-  // =========================
-  // Status Colors
-  // =========================
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'Done':
-        return '#E9D8FF';
-
-      case 'In Progress':
-        return '#FFE4E4';
-
-      case 'To-do':
-        return '#E4F0FF';
-
-      default:
-        return '#F0F0F0';
-    }
-  };
-
-  const getStatusTextColor = (status) => {
-    switch (status) {
-      case 'Done':
-        return '#6600FF';
-
-      case 'In Progress':
-        return '#E53E3E';
-
-      case 'To-do':
-        return '#3182CE';
-
-      default:
-        return '#000000';
-    }
-  };
-
-  // =========================
-  // Month / Day Names
-  // =========================
-
-  const monthNames = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-
-  const dayNames = [
-    'Sun',
-    'Mon',
-    'Tue',
-    'Wed',
-    'Thu',
-    'Fri',
-    'Sat',
-  ];
-
-  // =========================
-  // UI
-  // =========================
+  const monthNames = ['May', 'May', 'May', 'May', 'May'];
+  const dayNames = ['Fri', 'Sat', 'Sun', 'Mon', 'Tue'];
 
   return (
-    <View style={styles.container}>
-      <LinearGradient
-        colors={[
-          '#F0F9FF',
-          '#E6F3FF',
-          '#F0E6FF',
-          '#FFF5F0',
-        ]}
-        locations={[0, 0.33, 0.66, 1]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.gradientContainer}
-      >
-        {/* ================= HEADER ================= */}
-
+    <SafeAreaView style={styles.container}>
+      <View style={{ flex: 1 }}>
         <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-          >
-            <MaterialIcons
-              name="keyboard-backspace"
-              size={28}
-              color="#1A202C"
-            />
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <MaterialIcons name="keyboard-backspace" size={24} color="#1A202C" />
           </TouchableOpacity>
-
-          <Text style={styles.headerTitle}>
-            Today's Tasks
-          </Text>
-
-          <TouchableOpacity>
-            <MaterialIcons
-              name="notifications"
-              size={24}
-              color="#1A202C"
-            />
+          <Text style={styles.headerTitle}>Today's Tasks</Text>
+          <TouchableOpacity style={styles.notificationButton}>
+            <Ionicons name="notifications" size={18} color="#1A1A1A" />
           </TouchableOpacity>
         </View>
 
-        {/* ================= DATE ================= */}
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.dateScroll}
-        >
+        <View style={styles.dateContainer}>
           {weekDays.map((date, index) => {
-            const isSelected = isSameDay(
-              date,
-              selectedDate
-            );
-
+            const isSelected = isSameDay(date, selectedDate);
             return (
               <TouchableOpacity
                 key={index}
                 style={[
                   styles.dateCard,
-                  isSelected &&
-                    styles.dateCardSelected,
+                  isSelected && styles.dateCardSelected,
                 ]}
                 onPress={() => setSelectedDate(date)}
               >
-                <Text
-                  style={[
-                    styles.dateMonth,
-                    isSelected &&
-                      styles.dateMonthSelected,
-                  ]}
-                >
-                  {monthNames[date.getMonth()]}
+                <Text style={[styles.dateMonth, isSelected && styles.dateTextSelected]}>
+                  {monthNames[index]}
                 </Text>
-
-                <Text
-                  style={[
-                    styles.dateDay,
-                    isSelected &&
-                      styles.dateDaySelected,
-                  ]}
-                >
-                  {date.getDate()}
+                <Text style={[styles.dateDay, isSelected && styles.dateTextSelected]}>
+                  {23 + index}
                 </Text>
-
-                <Text
-                  style={[
-                    styles.dateWeekday,
-                    isSelected &&
-                      styles.dateWeekdaySelected,
-                  ]}
-                >
-                  {dayNames[date.getDay()]}
+                <Text style={[styles.dateWeekday, isSelected && styles.dateTextSelected]}>
+                  {dayNames[index]}
                 </Text>
               </TouchableOpacity>
             );
           })}
-        </ScrollView>
-
-        {/* ================= FILTERS ================= */}
+        </View>
 
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filterScroll}
         >
-          {[
-            'All',
-            'To-do',
-            'In Progress',
-            'Done',
-          ].map((filter) => (
+          {['All', 'To do', 'In Progress', 'Completed'].map((filter) => (
             <TouchableOpacity
               key={filter}
               style={[
                 styles.filterButton,
-                activeFilter === filter &&
-                  styles.filterButtonActive,
+                activeFilter === filter && styles.filterButtonActive,
               ]}
-              onPress={() =>
-                setActiveFilter(filter)
-              }
+              onPress={() => setActiveFilter(filter)}
             >
               <Text
                 style={[
                   styles.filterButtonText,
-                  activeFilter === filter &&
-                    styles.filterButtonTextActive,
+                  activeFilter === filter && styles.filterButtonTextActive,
                 ]}
               >
                 {filter}
@@ -450,173 +210,122 @@ const TodayScreen = () => {
           ))}
         </ScrollView>
 
-        {/* ================= TASKS ================= */}
-
         <ScrollView
           contentContainerStyle={styles.tasksContainer}
           showsVerticalScrollIndicator={false}
         >
           {loading ? (
             <View style={styles.emptyState}>
-              <ActivityIndicator
-                size="large"
-                color="#6600FF"
-              />
-
-              <Text style={styles.emptyText}>
-                Loading tasks...
-              </Text>
-            </View>
-          ) : filteredTasks.length === 0 ? (
-            <View style={styles.emptyState}>
-              <MaterialIcons
-                name="event-busy"
-                size={64}
-                color="#A0AEC0"
-              />
-
-              <Text style={styles.emptyText}>
-                No tasks for this day
-              </Text>
-
-              <Text style={styles.emptySubtext}>
-                Add a task to get started
-              </Text>
+              <ActivityIndicator size="large" color="#5B2DE8" />
+              <Text style={styles.emptyText}>Loading tasks...</Text>
             </View>
           ) : (
-            filteredTasks.map((task) => {
-              const status = getTaskStatus(task);
-
-              return (
-                <View
-                  key={task.id}
-                  style={styles.taskCard}
-                >
-                  {/* ================= TASK HEADER ================= */}
-
-                  <View style={styles.taskHeader}>
-                    <Text style={styles.taskProject}>
-                      {task.category_name ||
-                        task.category ||
-                        task.project ||
-                        'Task'}
-                    </Text>
-
-                    <TouchableOpacity
-                      onPress={() =>
-                        handleToggleComplete(task)
-                      }
-                      style={[
-                        styles.statusBadge,
-                        {
-                          backgroundColor:
-                            getStatusColor(status),
-                        },
-                      ]}
-                    >
-                      <MaterialIcons
-                        name={
-                          status === 'Done'
-                            ? 'check-circle'
-                            : status === 'In Progress'
-                            ? 'access-time'
-                            : 'radio-button-unchecked'
-                        }
-                        size={16}
-                        color={getStatusTextColor(
-                          status
-                        )}
-                      />
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* ================= TITLE ================= */}
-
-                  <Text style={styles.taskTitle}>
-                    {task.title}
-                  </Text>
-
-                  {/* ================= DESCRIPTION ================= */}
-
-                  {task.description ? (
-                    <Text
-                      style={styles.taskDescription}
-                      numberOfLines={2}
-                    >
-                      {task.description}
-                    </Text>
-                  ) : null}
-
-                  {/* ================= PRIORITY ================= */}
-
-                  {task.priority ? (
-                    <Text
-                      style={{
-                        marginTop: 8,
-                        fontSize: 12,
-                        color:
-                          task.priority
-                            .toLowerCase() === 'high'
-                            ? '#E53E3E'
-                            : task.priority
-                                .toLowerCase() ===
-                              'medium'
-                            ? '#D69E2E'
-                            : '#3182CE',
-                      }}
-                    >
-                      Priority: {task.priority}
-                    </Text>
-                  ) : null}
-
-                  {/* ================= BUTTONS ================= */}
-
-                  <View style={styles.taskButtons}>
-                    <TouchableOpacity
-                      style={[
-                        styles.taskButton,
-                        styles.editTaskButton,
-                      ]}
-                      onPress={() =>
-                        handleEdit(task.id)
-                      }
-                      activeOpacity={0.8}
-                    >
-                      <Text
-                        style={
-                          styles.taskButtonText
-                        }
-                      >
-                        Edit
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.taskButton,
-                        styles.deleteTaskButton,
-                      ]}
-                      onPress={() =>
-                        handleDeletePress(task.id)
-                      }
-                      activeOpacity={0.8}
-                    >
-                      <Text
-                        style={
-                          styles.taskButtonText
-                        }
-                      >
-                        Delete
-                      </Text>
-                    </TouchableOpacity>
+            <>
+              <View style={styles.taskCard}>
+                <View style={styles.cardHeaderRow}>
+                  <Text style={styles.taskProject}>Grocery Shopping app design</Text>
+                  <View style={styles.badgeIcon}>
+                    <Feather name="bookmark" size={14} color="#FF7A8A" />
                   </View>
                 </View>
-              );
-            })
+                <Text style={styles.taskTitle}>Market Research</Text>
+                <View style={styles.timeRow}>
+                  <Feather name="clock" size={12} color="#8A8A8A" />
+                  <Text style={styles.timeText}>02:00 AM</Text>
+                </View>
+
+                <View style={styles.taskButtons}>
+                  <TouchableOpacity
+                    style={[styles.taskButton, styles.editTaskButton]}
+                    onPress={() => handleEdit('1')}
+                  >
+                    <Text style={styles.taskButtonText}>Edit</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.taskButton, styles.deleteTaskButton]}
+                    onPress={() => handleDeletePress('1')}
+                  >
+                    <Text style={styles.taskButtonText}>Delete</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.taskCard}>
+                <View style={styles.cardHeaderRow}>
+                  <Text style={styles.taskProject}>Grocery Shopping app design</Text>
+                  <View style={styles.badgeIcon}>
+                    <Feather name="bookmark" size={14} color="#FF7A8A" />
+                  </View>
+                </View>
+                <Text style={styles.taskTitle}>Competitive Analysis</Text>
+                <View style={styles.timeRow}>
+                  <Feather name="clock" size={12} color="#8A8A8A" />
+                  <Text style={styles.timeText}>12:00 PM</Text>
+                </View>
+
+                <View style={styles.taskButtons}>
+                  <TouchableOpacity style={[styles.taskButton, styles.editTaskButton]}>
+                    <Text style={styles.taskButtonText}>Edit</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={[styles.taskButton, styles.deleteTaskButton]}>
+                    <Text style={styles.taskButtonText}>Delete</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.taskCard}>
+                <View style={styles.cardHeaderRow}>
+                  <Text style={styles.taskProject}>Uber Eats redesign challenge</Text>
+                  <View style={styles.badgeIcon}>
+                    <Feather name="bookmark" size={14} color="#8B5CF6" />
+                  </View>
+                </View>
+                <Text style={styles.taskTitle}>Create Low-fidelity Wireframe</Text>
+                <View style={styles.timeRow}>
+                  <Feather name="clock" size={12} color="#8A8A8A" />
+                  <Text style={styles.timeText}>07:00 PM</Text>
+                </View>
+
+                <View style={styles.taskButtons}>
+                  <TouchableOpacity style={[styles.taskButton, styles.editTaskButton]}>
+                    <Text style={styles.taskButtonText}>Edit</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={[styles.taskButton, styles.deleteTaskButton]}>
+                    <Text style={styles.taskButtonText}>Delete</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </>
           )}
         </ScrollView>
 
-        {/* ================= DELETE MODAL ================= */}
+        <View style={styles.bottomNavContainer}>
+          <View style={styles.bottomNav}>
+            <Pressable style={styles.navItem} onPress={() => navigation.navigate('Home')}>
+              <Ionicons name="home-outline" size={22} color="#A0A0A0" />
+            </Pressable>
+
+            <Pressable style={styles.navItem}>
+              <Feather name="calendar" size={22} color="#5B2DE8" />
+            </Pressable>
+
+            <View style={{ width: 40 }} />
+            <Pressable style={styles.navItem}>
+              <Feather name="grid" size={22} color="#A0A0A0" />
+            </Pressable>
+
+            <Pressable style={styles.navItem}>
+              <Feather name="settings" size={22} color="#A0A0A0" />
+            </Pressable>
+          </View>
+
+          <Pressable style={styles.fabButton} onPress={() => navigation.navigate('AddProject')}>
+            <Feather name="plus" size={28} color="#FFFFFF" />
+          </Pressable>
+        </View>
 
         <Modal
           visible={showDeleteModal}
@@ -626,47 +335,276 @@ const TodayScreen = () => {
         >
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>
-                Are You Sure?
-              </Text>
+              <Text style={styles.modalTitle}>Are You Sure ?</Text>
 
               <View style={styles.modalButtons}>
                 <TouchableOpacity
-                  style={[
-                    styles.modalButton,
-                    styles.modalButtonYes,
-                  ]}
+                  style={[styles.modalButton, styles.modalButtonYes]}
                   onPress={confirmDelete}
-                  activeOpacity={0.8}
                 >
-                  <Text
-                    style={styles.modalButtonText}
-                  >
-                    Yes
-                  </Text>
+                  <Text style={styles.modalButtonText}>Yes</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[
-                    styles.modalButton,
-                    styles.modalButtonNo,
-                  ]}
+                  style={[styles.modalButton, styles.modalButtonNo]}
                   onPress={cancelDelete}
-                  activeOpacity={0.8}
                 >
-                  <Text
-                    style={styles.modalButtonText}
-                  >
-                    No
-                  </Text>
+                  <Text style={styles.modalButtonText}>No</Text>
                 </TouchableOpacity>
               </View>
             </View>
           </View>
         </Modal>
-      </LinearGradient>
-    </View>
+      </View>
+    </SafeAreaView>
   );
 };
 
 export default TodayScreen;
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#FAF9FF',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justify: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    marginBottom: 15,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1F1F1F',
+  },
+  notificationButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justify: 'center',
+  },
+
+  // DATE SLIDER
+  dateContainer: {
+    flexDirection: 'row',
+    justify: 'space-between',
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  dateCard: {
+    width: 54,
+    height: 70,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justify: 'center',
+  },
+  dateCardSelected: {
+    backgroundColor: '#5B2DE8',
+  },
+  dateMonth: {
+    fontSize: 10,
+    color: '#8A8A8A',
+  },
+  dateDay: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1F1F1F',
+    marginVertical: 2,
+  },
+  dateWeekday: {
+    fontSize: 10,
+    color: '#8A8A8A',
+  },
+  dateTextSelected: {
+    color: '#FFFFFF',
+  },
+
+  // FILTERS
+  filterScroll: {
+    paddingHorizontal: 20,
+    marginBottom: 15,
+  },
+  filterButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    marginRight: 10,
+  },
+  filterButtonActive: {
+    backgroundColor: '#5B2DE8',
+  },
+  filterButtonText: {
+    fontSize: 13,
+    color: '#8A8A8A',
+    fontWeight: '600',
+  },
+  filterButtonTextActive: {
+    color: '#FFFFFF',
+  },
+
+  // TASKS LIST
+  tasksContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: 110,
+  },
+  taskCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 12,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justify: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  taskProject: {
+    fontSize: 11,
+    color: '#A0A0A0',
+  },
+  badgeIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    backgroundColor: '#FFF0F2',
+    alignItems: 'center',
+    justify: 'center',
+  },
+  taskTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1F1F1F',
+    marginBottom: 8,
+  },
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  timeText: {
+    fontSize: 11,
+    color: '#8A8A8A',
+    marginLeft: 4,
+  },
+  taskButtons: {
+    flexDirection: 'row',
+    justify: 'space-between',
+  },
+  taskButton: {
+    flex: 0.48,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justify: 'center',
+  },
+  editTaskButton: {
+    backgroundColor: '#5B2DE8',
+  },
+  deleteTaskButton: {
+    backgroundColor: '#D32F2F',
+  },
+  taskButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+
+  bottomNavContainer: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    right: 20,
+    alignItems: 'center',
+  },
+  bottomNav: {
+    width: '100%',
+    height: 64,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    flexDirection: 'row',
+    justify: 'space-around',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+  },
+  navItem: {
+    alignItems: 'center',
+    justify: 'center',
+  },
+  fabButton: {
+    position: 'absolute',
+    top: -22,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#5B2DE8',
+    alignItems: 'center',
+    justify: 'center',
+    elevation: 8,
+    shadowColor: '#5B2DE8',
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    alignItems: 'center',
+    justify: 'center',
+    paddingHorizontal: 30,
+  },
+  modalContent: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1F1F1F',
+    marginBottom: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justify: 'space-between',
+    width: '100%',
+  },
+  modalButton: {
+    flex: 0.47,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justify: 'center',
+  },
+  modalButtonYes: {
+    backgroundColor: '#D32F2F',
+  },
+  modalButtonNo: {
+    backgroundColor: '#5B2DE8',
+  },
+  modalButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  emptyState: {
+    alignItems: 'center',
+    marginTop: 40,
+  },
+  emptyText: {
+    marginTop: 10,
+    color: '#8A8A8A',
+  },
+});

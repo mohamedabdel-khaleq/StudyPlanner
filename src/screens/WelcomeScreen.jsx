@@ -14,13 +14,15 @@ const WelcomeScreen = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
+
       <Image
-        source={require('../../assets/images/pizza1.png')}
+        source={require('../../assets/images/welcome.png')}
         style={styles.image}
         resizeMode="contain"
       />
 
       <View style={styles.content}>
+
         <Text style={styles.title}>
           Task Management &{'\n'}To-Do List
         </Text>
@@ -46,6 +48,7 @@ const WelcomeScreen = ({ navigation }) => {
             ➜
           </Text>
         </Pressable>
+
       </View>
     </View>
   );
@@ -61,15 +64,16 @@ const styles = StyleSheet.create({
   },
 
   image: {
-    width: 320,
-    height: 360,
-    marginTop: 40,
+    width: 260,
+    height: 300,
+    marginTop: 35,
+    alignSelf: 'center',
   },
 
   content: {
     width: '100%',
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 10,
   },
 
   title: {

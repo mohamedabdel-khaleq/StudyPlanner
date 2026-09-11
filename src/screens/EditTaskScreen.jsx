@@ -1,1326 +1,611 @@
-import { MaterialIcons } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
-  Modal,
-  ScrollView,
+  View,
   Text,
   TextInput,
-  TouchableOpacity,
-  View,
+  Pressable,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
+  Platform,
 } from 'react-native';
-
-import { useTasks } from '../context/TaskContext';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuth } from '../context/AuthContext';
+import { useTasks } from '../context/TaskContext';
 import {
+  getTaskById,
   updateTask as updateTaskAPI,
   deleteTask as deleteTaskAPI,
 } from '../services/taskService';
+import { getCategories } from '../services/categoryService';
+import styles from './EditStyles';
 
-import styles from './styles';
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = {
+      hasError: false,
+      error: null,
+    };
+  }
 
-const EditScreen = () => {
+  static getDerivedStateFromError(error) {
+    return {
+      hasError: true,
+      error,
+    };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.log('EditScreen Error:', error);
+    console.log('EditScreen Error Info:', errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View
+          style={{
+            flex: 1,
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 30,
+            backgroundColor: '#F8F9FF',
+          }}
+        >
+          <MaterialIcons name="error-outline" size={60} color="#EF4444" />
+          <Text
+            style={{
+              fontSize: 20,
+              fontWeight: '700',
+              color: '#111827',
+              marginTop: 15,
+              textAlign: 'center',
+            }}
+          >
+            Something went wrong
+          </Text>
+          <Text
+            style={{
+              marginTop: 10,
+              color: '#6B7280',
+              textAlign: 'center',
+            }}
+          >
+            Please go back and try again.
+          </Text>
+        </View>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+
+const EditScreenContent = () => {
   const navigation = useNavigation();
   const route = useRoute();
 
-  const { tasks, updateTask: updateTaskLocal, deleteTask: deleteTaskLocal } =
-    useTasks();
-
   const { token } = useAuth();
+  const { tasks = [] } = useTasks();
 
+  // Route Data
   const taskId = route.params?.taskId;
+  const passedTask = route.params?.task || null;
 
-  const task = tasks.find(
-    (t) => String(t.id) === String(taskId)
-  );
+  // Find Task In Context
+  const contextTask = useMemo(() => {
+    if (!taskId || !Array.isArray(tasks)) {
+      return null;
+    }
+    return tasks.find((item) => String(item.id) === String(taskId)) || null;
+  }, [tasks, taskId]);
 
-  const [taskGroups, setTaskGroups] = useState([
-    'Work',
-    'Study',
-    'Personal',
-  ]);
+  // Task State
+  const [apiTask, setApiTask] = useState(passedTask || contextTask || null);
+  const [loadingTask, setLoadingTask] = useState(true);
 
-  const [selectedGroup, setSelectedGroup] = useState(
-    task?.project || 'Work'
-  );
+  // Form State
+  const [projectName, setProjectName] = useState('');
+  const [description, setDescription] = useState('');
+  const [priority, setPriority] = useState('Medium');
 
-  const [showGroupDropdown, setShowGroupDropdown] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState(null);
+  const [categories, setCategories] = useState([]);
+  const [loadingCategories, setLoadingCategories] = useState(true);
 
-  const [projectName, setProjectName] = useState(
-    task?.title || ''
-  );
+  // Date State
+  const [startDate, setStartDate] = useState(new Date());
+  const [endDate, setEndDate] = useState(new Date());
 
-  const [description, setDescription] = useState(
-    task?.description || ''
-  );
+  // Native Date Picker State
+  const [showPicker, setShowPicker] = useState(false);
+  const [pickerType, setPickerType] = useState('start'); // 'start' | 'end'
 
-  /*
-   * Backend uses due_date.
-   * We support due_date first, and date as fallback
-   * in case the local TaskContext still uses date.
-   */
-  const taskDate = task?.due_date || task?.date;
+  // Action State
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  const getInitialDate = () => {
+  const task = contextTask || apiTask || passedTask || null;
+
+  // Load Task
+  useEffect(() => {
+    let mounted = true;
+
+    const loadTask = async () => {
+      if (contextTask) {
+        if (mounted) {
+          setApiTask(contextTask);
+          setLoadingTask(false);
+        }
+        return;
+      }
+
+      if (passedTask) {
+        if (mounted) {
+          setApiTask(passedTask);
+          setLoadingTask(false);
+        }
+        return;
+      }
+
+      if (!taskId || !token) {
+        if (mounted) setLoadingTask(false);
+        return;
+      }
+
+      try {
+        const data = await getTaskById(token, taskId);
+        if (mounted) setApiTask(data);
+      } catch (error) {
+        if (mounted) {
+          Alert.alert('Error', 'Could not load this task.');
+        }
+      } finally {
+        if (mounted) setLoadingTask(false);
+      }
+    };
+
+    loadTask();
+
+    return () => {
+      mounted = false;
+    };
+  }, [taskId, token, contextTask, passedTask]);
+
+  // Load Categories
+  useEffect(() => {
+    let mounted = true;
+
+    const loadCategories = async () => {
+      if (!token) {
+        if (mounted) setLoadingCategories(false);
+        return;
+      }
+
+      try {
+        setLoadingCategories(true);
+        const data = await getCategories(token);
+        const categoriesArray = Array.isArray(data) ? data : [];
+        if (mounted) setCategories(categoriesArray);
+      } catch (error) {
+        console.log('EditScreen Categories Error:', error);
+      } finally {
+        if (mounted) setLoadingCategories(false);
+      }
+    };
+
+    loadCategories();
+
+    return () => {
+      mounted = false;
+    };
+  }, [token]);
+
+  // Initialize Form From Task
+  useEffect(() => {
+    if (!task) return;
+
+    setProjectName(task.title || '');
+    setDescription(task.description || '');
+
+    if (task.priority) {
+      const normalized = String(task.priority).toLowerCase();
+      if (['low', 'medium', 'high'].includes(normalized)) {
+        setPriority(normalized.charAt(0).toUpperCase() + normalized.slice(1));
+      }
+    }
+
+    const taskDate = task.due_date || task.date;
     if (taskDate) {
-      const date = new Date(taskDate);
+      const parsedDate = new Date(taskDate);
+      if (!Number.isNaN(parsedDate.getTime())) {
+        const date = new Date(
+          parsedDate.getUTCFullYear(),
+          parsedDate.getUTCMonth(),
+          parsedDate.getUTCDate()
+        );
+        setStartDate(date);
+        setEndDate(date);
+      }
+    }
+  }, [task]);
 
-      if (!Number.isNaN(date.getTime())) {
-        return {
-          day: date.getUTCDate(),
-          month: date.getUTCMonth() + 1,
-          year: date.getUTCFullYear(),
-        };
+  // Select Category
+  useEffect(() => {
+    if (!task || !categories.length) return;
+
+    if (task.category_id) {
+      const categoryById = categories.find(
+        (c) => String(c.id) === String(task.category_id)
+      );
+      if (categoryById) {
+        setSelectedCategory(categoryById);
+        return;
       }
     }
 
-    const now = new Date();
-
-    return {
-      day: now.getDate(),
-      month: now.getMonth() + 1,
-      year: now.getFullYear(),
-    };
-  };
-
-  const getInitialEndDate = () => {
-    if (task?.endDate) {
-      const date = new Date(task.endDate);
-
-      if (!Number.isNaN(date.getTime())) {
-        return {
-          day: date.getUTCDate(),
-          month: date.getUTCMonth() + 1,
-          year: date.getUTCFullYear(),
-        };
-      }
+    if (task.category_name) {
+      const categoryByName = categories.find(
+        (c) => String(c.name).toLowerCase() === String(task.category_name).toLowerCase()
+      );
+      if (categoryByName) setSelectedCategory(categoryByName);
     }
+  }, [task, categories]);
 
-    const now = new Date();
-    now.setDate(now.getDate() + 1);
-
-    return {
-      day: now.getDate(),
-      month: now.getMonth() + 1,
-      year: now.getFullYear(),
-    };
-  };
-
-  const [startDate, setStartDate] = useState(getInitialDate);
-  const [endDate, setEndDate] = useState(getInitialEndDate);
-
-  const [showStartPicker, setShowStartPicker] = useState(false);
-  const [showEndPicker, setShowEndPicker] = useState(false);
-
-  const [showAddGroupModal, setShowAddGroupModal] = useState(false);
-  const [newGroupName, setNewGroupName] = useState('');
-
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-
-  const [isSaving, setIsSaving] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  const months = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-
-  const currentYear = new Date().getFullYear();
-
-  const years = Array.from(
-    { length: 10 },
-    (_, i) => currentYear + i
-  );
-
-  const getDaysInMonth = (year, month) => {
-    return new Date(year, month, 0).getDate();
-  };
-
-  const startDays = useMemo(() => {
-    return Array.from(
-      {
-        length: getDaysInMonth(
-          startDate.year,
-          startDate.month
-        ),
-      },
-      (_, i) => i + 1
-    );
-  }, [startDate.year, startDate.month]);
-
-  const endDays = useMemo(() => {
-    return Array.from(
-      {
-        length: getDaysInMonth(
-          endDate.year,
-          endDate.month
-        ),
-      },
-      (_, i) => i + 1
-    );
-  }, [endDate.year, endDate.month]);
-
+  // Date Helpers
   const formatDate = (date) => {
-    return `${date.day} ${months[date.month - 1]}, ${date.year}`;
+    if (!date) return '';
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
   };
 
   const formatDateToISO = (date) => {
-    return `${date.year}-${String(date.month).padStart(
-      2,
-      '0'
-    )}-${String(date.day).padStart(2, '0')}`;
+    if (!date) return null;
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
-  const updateStartDay = (day, month, year) => {
-    const maxDays = getDaysInMonth(year, month);
+  // Date Picker Handler
+  const handleDateChange = (event, selectedDate) => {
+    if (Platform.OS === 'android') {
+      setShowPicker(false);
+    }
 
-    const adjustedDay =
-      day > maxDays ? maxDays : day;
-
-    setStartDate({
-      day: adjustedDay,
-      month,
-      year,
-    });
+    if (selectedDate) {
+      if (pickerType === 'start') {
+        setStartDate(selectedDate);
+      } else {
+        setEndDate(selectedDate);
+      }
+    }
   };
 
-  const updateEndDay = (day, month, year) => {
-    const maxDays = getDaysInMonth(year, month);
-
-    const adjustedDay =
-      day > maxDays ? maxDays : day;
-
-    setEndDate({
-      day: adjustedDay,
-      month,
-      year,
-    });
+  const openDatePicker = (type) => {
+    setPickerType(type);
+    setShowPicker(true);
   };
 
-  const handleAddGroup = () => {
-    const groupName = newGroupName.trim();
+  // Update Task
+  const handleUpdate = async () => {
+    const targetId = task?.id || taskId;
 
-    if (!groupName) {
-      Alert.alert(
-        'Error',
-        'Please enter a group name'
-      );
+    if (!targetId) {
+      Alert.alert('Error', 'Task ID was not found.');
       return;
     }
 
-    if (taskGroups.includes(groupName)) {
-      Alert.alert(
-        'Error',
-        'This group already exists!'
-      );
+    const finalName = projectName.trim();
+    if (!finalName) {
+      Alert.alert('Missing Project Name', 'Please enter a project name.');
       return;
     }
 
-    setTaskGroups((prev) => [
-      ...prev,
-      groupName,
-    ]);
-
-    setSelectedGroup(groupName);
-    setNewGroupName('');
-    setShowAddGroupModal(false);
-
-    Alert.alert(
-      'Success',
-      `Group "${groupName}" added!`
-    );
-  };
-
-  /*
-   * EDIT TASK
-   *
-   * Backend TaskUpdate supports:
-   * title
-   * description
-   * due_date
-   * priority
-   * completed
-   * category_id
-   *
-   * We DON'T send:
-   * project
-   * group
-   * endDate
-   *
-   * because these are not part of TaskUpdate.
-   */
-  const handleEdit = async () => {
-    if (
-      taskId === undefined ||
-      taskId === null
-    ) {
-      Alert.alert(
-        'Error',
-        'Task ID is missing.'
-      );
+    // شرط التحقق من التواريخ
+    if (endDate < startDate) {
+      Alert.alert('Date Error', 'End Date cannot be before Start Date.');
       return;
     }
 
-    if (!projectName.trim()) {
-      Alert.alert(
-        'Error',
-        'Please enter a project name.'
-      );
-      return;
-    }
+    const updatedTask = {
+      title: finalName,
+      description: description.trim(),
+      due_date: formatDateToISO(startDate),
+      priority,
+      completed: typeof task?.completed === 'boolean' ? task.completed : false,
+    };
 
-    if (!token) {
-      Alert.alert(
-        'Error',
-        'You are not logged in.'
-      );
-      return;
+    if (selectedCategory?.id) {
+      updatedTask.category_id = selectedCategory.id;
+    } else if (task?.category_id) {
+      updatedTask.category_id = task.category_id;
     }
 
     try {
-      setIsSaving(true);
-
-      const updatedTask = {
-        title: projectName.trim(),
-        description: description.trim(),
-        due_date: formatDateToISO(startDate),
-      };
-
-      /*
-       * Send priority only if the task already has it.
-       */
-      if (task?.priority !== undefined) {
-        updatedTask.priority = task.priority;
-      }
-
-      /*
-       * Send completed only if the task already has it.
-       */
-      if (task?.completed !== undefined) {
-        updatedTask.completed = task.completed;
-      }
-
-      /*
-       * Send category_id only when the task already
-       * has a real category ID from the backend.
-       */
-      if (task?.category_id !== undefined && task?.category_id !== null) {
-        updatedTask.category_id = task.category_id;
-      }
-
-      /*
-       * 1. Update Backend
-       */
-      const updatedFromAPI = await updateTaskAPI(
-        token,
-        taskId,
-        updatedTask
-      );
-
-      /*
-       * 2. Update local TaskContext
-       *
-       * Keep your UI-specific fields too.
-       */
-      updateTaskLocal(taskId, {
-        ...task,
-        ...updatedFromAPI,
-        ...updatedTask,
-
-        // Keep compatibility with old local UI
-        date: updatedTask.due_date,
-
-        // UI-only
-        project: selectedGroup,
-        group: selectedGroup,
-
-        // UI-only
-        endDate: formatDateToISO(endDate),
-      });
-
-      Alert.alert(
-        'Success',
-        'Task updated successfully!',
-        [
-          {
-            text: 'OK',
-            onPress: () => navigation.goBack(),
-          },
-        ]
-      );
+      setSaving(true);
+      await updateTaskAPI(token, targetId, updatedTask);
+      Alert.alert('Success', 'Task updated successfully.', [
+        { text: 'OK', onPress: () => navigation.goBack() },
+      ]);
     } catch (error) {
-      console.log(
-        'EDIT TASK ERROR:',
-        error?.response?.data || error
-      );
-
-      const message =
+      const detail =
         error?.response?.data?.detail ||
-        'Failed to update task. Please try again.';
+        error?.response?.data?.message ||
+        'Could not update the task.';
 
       Alert.alert(
         'Error',
-        typeof message === 'string'
-          ? message
-          : 'Failed to update task.'
+        Array.isArray(detail)
+          ? detail.map((i) => i?.msg || '').join('\n')
+          : String(detail)
       );
     } finally {
-      setIsSaving(false);
+      setSaving(false);
     }
   };
 
+  // Delete Task
   const handleDelete = () => {
-    setShowDeleteModal(true);
-  };
+    const targetId = task?.id || taskId;
 
-  /*
-   * DELETE TASK
-   */
-  const confirmDelete = async () => {
-    if (
-      taskId === undefined ||
-      taskId === null
-    ) {
-      setShowDeleteModal(false);
-
-      Alert.alert(
-        'Error',
-        'Task ID is missing.'
-      );
-
+    if (!targetId) {
+      Alert.alert('Error', 'Task ID was not found.');
       return;
     }
 
-    if (!token) {
-      setShowDeleteModal(false);
-
-      Alert.alert(
-        'Error',
-        'You are not logged in.'
-      );
-
-      return;
-    }
-
-    try {
-      setIsDeleting(true);
-
-      /*
-       * 1. Delete from Backend
-       */
-      await deleteTaskAPI(
-        token,
-        taskId
-      );
-
-      /*
-       * 2. Delete from local context
-       */
-      deleteTaskLocal(taskId);
-
-      setShowDeleteModal(false);
-
-      Alert.alert(
-        'Success',
-        'Task deleted successfully!',
-        [
-          {
-            text: 'OK',
-            onPress: () => navigation.goBack(),
-          },
-        ]
-      );
-    } catch (error) {
-      console.log(
-        'DELETE TASK ERROR:',
-        error?.response?.data || error
-      );
-
-      const message =
-        error?.response?.data?.detail ||
-        'Failed to delete task. Please try again.';
-
-      Alert.alert(
-        'Error',
-        typeof message === 'string'
-          ? message
-          : 'Failed to delete task.'
-      );
-    } finally {
-      setIsDeleting(false);
-    }
+    Alert.alert('Delete Task', 'Are you sure you want to delete this task?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            setDeleting(true);
+            await deleteTaskAPI(token, targetId);
+            Alert.alert('Deleted', 'Task deleted successfully.', [
+              { text: 'OK', onPress: () => navigation.goBack() },
+            ]);
+          } catch (error) {
+            Alert.alert('Error', 'Could not delete the task.');
+          } finally {
+            setDeleting(false);
+          }
+        },
+      },
+    ]);
   };
+
+  if (loadingTask) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.loadingScreen}>
+          <ActivityIndicator size="large" color="#6C63FF" />
+          <Text style={styles.loadingTitle}>Loading task...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (!task) {
     return (
-      <View style={styles.container}>
-        <LinearGradient
-          colors={[
-            '#F0F9FF',
-            '#E6F3FF',
-            '#F0E6FF',
-            '#FFF5F0',
-          ]}
-          locations={[0, 0.33, 0.66, 1]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.gradientContainer}
-        >
-          <View style={styles.header}>
-            <TouchableOpacity
-              onPress={() => navigation.goBack()}
-            >
-              <MaterialIcons
-                name="keyboard-backspace"
-                size={28}
-                color="#1A202C"
-              />
-            </TouchableOpacity>
-
-            <Text style={styles.headerTitle}>
-              Edit Project
-            </Text>
-
-            <TouchableOpacity>
-              <MaterialIcons
-                name="notifications"
-                size={24}
-                color="#1A202C"
-              />
-            </TouchableOpacity>
-          </View>
-
-          <View
-            style={{
-              flex: 1,
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 18,
-                color: '#718096',
-              }}
-            >
-              Task not found
-            </Text>
-          </View>
-        </LinearGradient>
-      </View>
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.emptyScreen}>
+          <MaterialIcons name="task" size={70} color="#A78BFA" />
+          <Text style={styles.emptyTitle}>Task not found</Text>
+          <Pressable onPress={() => navigation.goBack()} style={styles.backHomeButton}>
+            <Text style={styles.backHomeButtonText}>Go Back</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <LinearGradient
-        colors={[
-          '#F0F9FF',
-          '#E6F3FF',
-          '#F0E6FF',
-          '#FFF5F0',
-        ]}
-        locations={[0, 0.33, 0.66, 1]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.gradientContainer}
-      >
-        {/* HEADER */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-          >
-            <MaterialIcons
-              name="keyboard-backspace"
-              size={28}
-              color="#1A202C"
-            />
-          </TouchableOpacity>
-
-          <Text style={styles.headerTitle}>
-            Edit Project
-          </Text>
-
-          <TouchableOpacity>
-            <MaterialIcons
-              name="notifications"
-              size={24}
-              color="#1A202C"
-            />
-          </TouchableOpacity>
-        </View>
-
+    <SafeAreaView style={styles.safeArea}>
+      <LinearGradient colors={['#F8F9FF', '#FFFFFF']} style={styles.container}>
         <ScrollView
-          contentContainerStyle={
-            styles.scrollContent
-          }
           showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.contentContainer}
         >
-          {/* TASK GROUP */}
-          <TouchableOpacity
-            style={styles.card}
-            onPress={() =>
-              setShowGroupDropdown(true)
-            }
-            activeOpacity={0.7}
+          {/* Header */}
+          <View style={styles.header}>
+            <Pressable onPress={() => navigation.goBack()} style={styles.backButton}>
+              <MaterialIcons name="arrow-back" size={24} color="#111827" />
+            </Pressable>
+            <Text style={styles.headerTitle}>Edit Project</Text>
+            <View style={{ width: 40 }} />
+          </View>
+
+          {/* Task ID */}
+          <View style={styles.taskIdContainer}>
+            <MaterialIcons name="tag" size={18} color="#6C63FF" />
+            <Text style={styles.taskIdText}>Task #{task.id}</Text>
+          </View>
+
+          {/* Project Name */}
+          <Text style={styles.label}>Project Name</Text>
+          <TextInput
+            value={projectName}
+            onChangeText={setProjectName}
+            placeholder="Enter project name"
+            placeholderTextColor="#9CA3AF"
+            style={styles.input}
+          />
+
+          {/* Description */}
+          <Text style={styles.label}>Description</Text>
+          <TextInput
+            value={description}
+            onChangeText={setDescription}
+            placeholder="Enter project description"
+            placeholderTextColor="#9CA3AF"
+            multiline
+            numberOfLines={5}
+            textAlignVertical="top"
+            style={[styles.input, styles.descriptionInput]}
+          />
+
+          {/* Task Group */}
+          <View style={styles.labelRow}>
+            <Text style={styles.label}>Task Group</Text>
+            {loadingCategories && <ActivityIndicator size="small" color="#6C63FF" />}
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoryList}
           >
-            <View style={styles.cardContent}>
-              <View style={styles.iconWork}>
-                <MaterialIcons
-                  name="business"
-                  size={22}
-                  color="#ff6bd3"
-                />
-              </View>
+            {categories.map((category) => {
+              const isSelected = selectedCategory?.id === category.id;
+              return (
+                <Pressable
+                  key={category.id}
+                  onPress={() => setSelectedCategory(category)}
+                  style={[
+                    styles.groupButton,
+                    isSelected && styles.groupButtonSelected,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.groupButtonText,
+                      isSelected && styles.groupButtonTextSelected,
+                    ]}
+                  >
+                    {category.name}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
 
-              <View style={styles.textContainer}>
-                <Text style={styles.label}>
-                  Task Group
-                </Text>
+          {/* Start Date */}
+          <Text style={styles.label}>Due Date</Text>
+          <Pressable onPress={() => openDatePicker('start')} style={styles.dateInput}>
+            <Text style={styles.dateText}>{formatDate(startDate)}</Text>
+            <MaterialIcons name="calendar-today" size={20} color="#6B7280" />
+          </Pressable>
 
-                <Text style={styles.value}>
-                  {selectedGroup}
-                </Text>
-              </View>
+          {/* End Date */}
+          <Text style={styles.label}>End Date</Text>
+          <Pressable onPress={() => openDatePicker('end')} style={styles.dateInput}>
+            <Text style={styles.dateText}>{formatDate(endDate)}</Text>
+            <MaterialIcons name="calendar-today" size={20} color="#6B7280" />
+          </Pressable>
 
+          {/* Priority */}
+          <Text style={styles.label}>Priority</Text>
+          <View style={styles.priorityContainer}>
+            {['Low', 'Medium', 'High'].map((item) => {
+              const isSelected = priority === item;
+              return (
+                <Pressable
+                  key={item}
+                  onPress={() => setPriority(item)}
+                  style={[
+                    styles.priorityButton,
+                    isSelected && styles.priorityButtonSelected,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.priorityButtonText,
+                      isSelected && styles.priorityButtonTextSelected,
+                    ]}
+                  >
+                    {item}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {/* Status */}
+          <View style={styles.statusCard}>
+            <View style={styles.statusIcon}>
               <MaterialIcons
-                name="arrow-drop-down"
-                size={28}
-                color="#1A202C"
+                name={task.completed ? 'check-circle' : 'pending-actions'}
+                size={22}
+                color={task.completed ? '#10B981' : '#F59E0B'}
               />
             </View>
-          </TouchableOpacity>
-
-          {/* PROJECT NAME */}
-          <View style={styles.card}>
-            <View style={styles.textContainer}>
-              <Text style={styles.label}>
-                Project Name
+            <View style={styles.statusContent}>
+              <Text style={styles.statusLabel}>Status</Text>
+              <Text style={styles.statusValue}>
+                {task.completed ? 'Completed' : 'In Progress'}
               </Text>
-
-              <TextInput
-                style={styles.inputField}
-                value={projectName}
-                onChangeText={setProjectName}
-                placeholder="Enter project name..."
-                placeholderTextColor="#A0AEC0"
-              />
             </View>
           </View>
 
-          {/* DESCRIPTION */}
-          <View style={styles.card}>
-            <View style={styles.textContainer}>
-              <Text style={styles.label}>
-                Description
-              </Text>
-
-              <TextInput
-                style={[
-                  styles.descriptionValue,
-                  styles.textArea,
-                ]}
-                value={description}
-                onChangeText={setDescription}
-                multiline
-                numberOfLines={4}
-                placeholder="Describe your task..."
-                placeholderTextColor="#A0AEC0"
-              />
-            </View>
-          </View>
-
-          {/* START / DUE DATE */}
-          <TouchableOpacity
-            style={styles.card}
-            onPress={() =>
-              setShowStartPicker(true)
-            }
-            activeOpacity={0.7}
+          {/* Update Button */}
+          <Pressable
+            onPress={handleUpdate}
+            disabled={saving || deleting}
+            style={[styles.actionButtonWrapper, { opacity: saving || deleting ? 0.6 : 1 }]}
           >
-            <View style={styles.cardContent}>
-              <View style={styles.iconContainer}>
-                <MaterialIcons
-                  name="event"
-                  size={22}
-                  color="#6600FF"
-                />
-              </View>
-
-              <View style={styles.textContainer}>
-                <Text style={styles.label}>
-                  Start Date
-                </Text>
-
-                <Text style={styles.value}>
-                  {formatDate(startDate)}
-                </Text>
-              </View>
-
-              <MaterialIcons
-                name="arrow-drop-down"
-                size={28}
-                color="#1A202C"
-              />
-            </View>
-          </TouchableOpacity>
-
-          {/* END DATE - UI ONLY */}
-          <TouchableOpacity
-            style={styles.card}
-            onPress={() =>
-              setShowEndPicker(true)
-            }
-            activeOpacity={0.7}
-          >
-            <View style={styles.cardContent}>
-              <View style={styles.iconContainer}>
-                <MaterialIcons
-                  name="event"
-                  size={22}
-                  color="#6600FF"
-                />
-              </View>
-
-              <View style={styles.textContainer}>
-                <Text style={styles.label}>
-                  End Date
-                </Text>
-
-                <Text style={styles.value}>
-                  {formatDate(endDate)}
-                </Text>
-              </View>
-
-              <MaterialIcons
-                name="arrow-drop-down"
-                size={28}
-                color="#1A202C"
-              />
-            </View>
-          </TouchableOpacity>
-
-          {/* BUTTONS */}
-          <View style={styles.buttonRow}>
-            <TouchableOpacity
-              style={[
-                styles.button,
-                styles.editButton,
-                isSaving && { opacity: 0.6 },
-              ]}
-              onPress={handleEdit}
-              disabled={isSaving}
-              activeOpacity={0.8}
+            <LinearGradient
+              colors={['#6C63FF', '#8B5CF6']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.updateButton}
             >
-              <Text style={styles.buttonText}>
-                {isSaving ? 'Saving...' : 'Edit'}
-              </Text>
-            </TouchableOpacity>
+              {saving ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <MaterialIcons name="save" size={22} color="#FFFFFF" />
+                  <Text style={styles.updateButtonText}>Save Changes</Text>
+                </>
+              )}
+            </LinearGradient>
+          </Pressable>
 
-            <TouchableOpacity
-              style={[
-                styles.button,
-                styles.deleteButton,
-                isDeleting && { opacity: 0.6 },
-              ]}
-              onPress={handleDelete}
-              disabled={isDeleting}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.buttonText}>
-                {isDeleting ? 'Deleting...' : 'Delete'}
-              </Text>
-            </TouchableOpacity>
-          </View>
+          {/* Delete Button */}
+          <Pressable
+            onPress={handleDelete}
+            disabled={saving || deleting}
+            style={[styles.deleteButton, { opacity: saving || deleting ? 0.6 : 1 }]}
+          >
+            {deleting ? (
+              <ActivityIndicator color="#EF4444" />
+            ) : (
+              <>
+                <MaterialIcons name="delete-outline" size={22} color="#EF4444" />
+                <Text style={styles.deleteButtonText}>Delete Task</Text>
+              </>
+            )}
+          </Pressable>
         </ScrollView>
 
-        {/* GROUP DROPDOWN */}
-        <Modal
-          visible={showGroupDropdown}
-          transparent
-          animationType="fade"
-          onRequestClose={() =>
-            setShowGroupDropdown(false)
-          }
-        >
-          <TouchableOpacity
-            style={styles.dropdownModalOverlay}
-            activeOpacity={1}
-            onPress={() =>
-              setShowGroupDropdown(false)
-            }
-          >
-            <View
-              style={styles.dropdownModalContent}
-            >
-              {taskGroups.map((group) => (
-                <TouchableOpacity
-                  key={group}
-                  style={styles.dropdownOption}
-                  onPress={() => {
-                    setSelectedGroup(group);
-                    setShowGroupDropdown(false);
-                  }}
-                >
-                  <MaterialIcons
-                    name={
-                      group === selectedGroup
-                        ? 'check-circle'
-                        : 'circle'
-                    }
-                    size={20}
-                    color={
-                      group === selectedGroup
-                        ? '#6600FF'
-                        : '#A0AEC0'
-                    }
-                  />
-
-                  <Text
-                    style={
-                      styles.dropdownOptionText
-                    }
-                  >
-                    {group}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-
-              <View style={styles.divider} />
-
-              <TouchableOpacity
-                style={styles.addGroupOption}
-                onPress={() => {
-                  setShowGroupDropdown(false);
-                  setShowAddGroupModal(true);
-                }}
-              >
-                <MaterialIcons
-                  name="add-circle"
-                  size={20}
-                  color="#6600FF"
-                />
-
-                <Text
-                  style={styles.addGroupText}
-                >
-                  Add Group
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </Modal>
-
-        {/* ADD GROUP */}
-        <Modal
-          visible={showAddGroupModal}
-          transparent
-          animationType="fade"
-          onRequestClose={() =>
-            setShowAddGroupModal(false)
-          }
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <TouchableOpacity
-                style={styles.modalCloseButton}
-                onPress={() =>
-                  setShowAddGroupModal(false)
-                }
-              >
-                <MaterialIcons
-                  name="close"
-                  size={20}
-                  color="#1A202C"
-                />
-              </TouchableOpacity>
-
-              <Text style={styles.modalTitle}>
-                Add New Group
-              </Text>
-
-              <TextInput
-                style={styles.modalInput}
-                value={newGroupName}
-                onChangeText={setNewGroupName}
-                placeholder="Enter group name..."
-                placeholderTextColor="#A0AEC0"
-              />
-
-              <TouchableOpacity
-                style={styles.modalButton}
-                onPress={handleAddGroup}
-              >
-                <Text
-                  style={styles.modalButtonText}
-                >
-                  Add Group
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-
-        {/* DELETE CONFIRMATION */}
-        <Modal
-          visible={showDeleteModal}
-          transparent
-          animationType="fade"
-          onRequestClose={() =>
-            setShowDeleteModal(false)
-          }
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>
-                Are You Sure?
-              </Text>
-
-              <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  style={[
-                    styles.modalButton,
-                    styles.modalButtonYes,
-                  ]}
-                  onPress={confirmDelete}
-                  disabled={isDeleting}
-                  activeOpacity={0.8}
-                >
-                  <Text
-                    style={styles.modalButtonText}
-                  >
-                    {isDeleting ? 'Deleting...' : 'Yes'}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.modalButton,
-                    styles.modalButtonNo,
-                  ]}
-                  onPress={() =>
-                    setShowDeleteModal(false)
-                  }
-                  disabled={isDeleting}
-                  activeOpacity={0.8}
-                >
-                  <Text
-                    style={styles.modalButtonText}
-                  >
-                    No
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
-
-        {/* START DATE PICKER */}
-        <Modal
-          visible={showStartPicker}
-          transparent
-          animationType="fade"
-          onRequestClose={() =>
-            setShowStartPicker(false)
-          }
-        >
-          <View style={styles.datePickerOverlay}>
-            <View
-              style={styles.datePickerContainer}
-            >
-              <View style={styles.datePickerHeader}>
-                <Text
-                  style={styles.datePickerTitle}
-                >
-                  Select Start Date
-                </Text>
-
-                <TouchableOpacity
-                  onPress={() =>
-                    setShowStartPicker(false)
-                  }
-                >
-                  <MaterialIcons
-                    name="close"
-                    size={24}
-                    color="#1A202C"
-                  />
-                </TouchableOpacity>
-              </View>
-
-              <View
-                style={styles.datePickerColumns}
-              >
-                {/* DAY */}
-                <View
-                  style={styles.datePickerColumn}
-                >
-                  <Text
-                    style={
-                      styles.datePickerColumnLabel
-                    }
-                  >
-                    Day
-                  </Text>
-
-                  <ScrollView
-                    style={styles.datePickerScroll}
-                  >
-                    {startDays.map((day) => (
-                      <TouchableOpacity
-                        key={day}
-                        style={[
-                          styles.datePickerOption,
-                          day === startDate.day &&
-                            styles.datePickerOptionSelected,
-                        ]}
-                        onPress={() =>
-                          updateStartDay(
-                            day,
-                            startDate.month,
-                            startDate.year
-                          )
-                        }
-                      >
-                        <Text
-                          style={[
-                            styles.datePickerOptionText,
-                            day === startDate.day &&
-                              styles.datePickerOptionTextSelected,
-                          ]}
-                        >
-                          {day}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-
-                {/* MONTH */}
-                <View
-                  style={styles.datePickerColumn}
-                >
-                  <Text
-                    style={
-                      styles.datePickerColumnLabel
-                    }
-                  >
-                    Month
-                  </Text>
-
-                  <ScrollView
-                    style={styles.datePickerScroll}
-                  >
-                    {months.map(
-                      (month, index) => (
-                        <TouchableOpacity
-                          key={month}
-                          style={[
-                            styles.datePickerOption,
-                            index + 1 ===
-                              startDate.month &&
-                              styles.datePickerOptionSelected,
-                          ]}
-                          onPress={() =>
-                            updateStartDay(
-                              startDate.day,
-                              index + 1,
-                              startDate.year
-                            )
-                          }
-                        >
-                          <Text
-                            style={[
-                              styles.datePickerOptionText,
-                              index + 1 ===
-                                startDate.month &&
-                                styles.datePickerOptionTextSelected,
-                            ]}
-                          >
-                            {month}
-                          </Text>
-                        </TouchableOpacity>
-                      )
-                    )}
-                  </ScrollView>
-                </View>
-
-                {/* YEAR */}
-                <View
-                  style={styles.datePickerColumn}
-                >
-                  <Text
-                    style={
-                      styles.datePickerColumnLabel
-                    }
-                  >
-                    Year
-                  </Text>
-
-                  <ScrollView
-                    style={styles.datePickerScroll}
-                  >
-                    {years.map((year) => (
-                      <TouchableOpacity
-                        key={year}
-                        style={[
-                          styles.datePickerOption,
-                          year === startDate.year &&
-                            styles.datePickerOptionSelected,
-                        ]}
-                        onPress={() =>
-                          updateStartDay(
-                            startDate.day,
-                            startDate.month,
-                            year
-                          )
-                        }
-                      >
-                        <Text
-                          style={[
-                            styles.datePickerOptionText,
-                            year === startDate.year &&
-                              styles.datePickerOptionTextSelected,
-                          ]}
-                        >
-                          {year}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={
-                  styles.datePickerConfirmButton
-                }
-                onPress={() =>
-                  setShowStartPicker(false)
-                }
-              >
-                <Text
-                  style={
-                    styles.datePickerConfirmButtonText
-                  }
-                >
-                  Confirm
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-
-        {/* END DATE PICKER */}
-        <Modal
-          visible={showEndPicker}
-          transparent
-          animationType="fade"
-          onRequestClose={() =>
-            setShowEndPicker(false)
-          }
-        >
-          <View style={styles.datePickerOverlay}>
-            <View
-              style={styles.datePickerContainer}
-            >
-              <View style={styles.datePickerHeader}>
-                <Text
-                  style={styles.datePickerTitle}
-                >
-                  Select End Date
-                </Text>
-
-                <TouchableOpacity
-                  onPress={() =>
-                    setShowEndPicker(false)
-                  }
-                >
-                  <MaterialIcons
-                    name="close"
-                    size={24}
-                    color="#1A202C"
-                  />
-                </TouchableOpacity>
-              </View>
-
-              <View
-                style={styles.datePickerColumns}
-              >
-                {/* DAY */}
-                <View
-                  style={styles.datePickerColumn}
-                >
-                  <Text
-                    style={
-                      styles.datePickerColumnLabel
-                    }
-                  >
-                    Day
-                  </Text>
-
-                  <ScrollView
-                    style={styles.datePickerScroll}
-                  >
-                    {endDays.map((day) => (
-                      <TouchableOpacity
-                        key={day}
-                        style={[
-                          styles.datePickerOption,
-                          day === endDate.day &&
-                            styles.datePickerOptionSelected,
-                        ]}
-                        onPress={() =>
-                          updateEndDay(
-                            day,
-                            endDate.month,
-                            endDate.year
-                          )
-                        }
-                      >
-                        <Text
-                          style={[
-                            styles.datePickerOptionText,
-                            day === endDate.day &&
-                              styles.datePickerOptionTextSelected,
-                          ]}
-                        >
-                          {day}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-
-                {/* MONTH */}
-                <View
-                  style={styles.datePickerColumn}
-                >
-                  <Text
-                    style={
-                      styles.datePickerColumnLabel
-                    }
-                  >
-                    Month
-                  </Text>
-
-                  <ScrollView
-                    style={styles.datePickerScroll}
-                  >
-                    {months.map(
-                      (month, index) => (
-                        <TouchableOpacity
-                          key={month}
-                          style={[
-                            styles.datePickerOption,
-                            index + 1 ===
-                              endDate.month &&
-                              styles.datePickerOptionSelected,
-                          ]}
-                          onPress={() =>
-                            updateEndDay(
-                              endDate.day,
-                              index + 1,
-                              endDate.year
-                            )
-                          }
-                        >
-                          <Text
-                            style={[
-                              styles.datePickerOptionText,
-                              index + 1 ===
-                                endDate.month &&
-                                styles.datePickerOptionTextSelected,
-                            ]}
-                          >
-                            {month}
-                          </Text>
-                        </TouchableOpacity>
-                      )
-                    )}
-                  </ScrollView>
-                </View>
-
-                {/* YEAR */}
-                <View
-                  style={styles.datePickerColumn}
-                >
-                  <Text
-                    style={
-                      styles.datePickerColumnLabel
-                    }
-                  >
-                    Year
-                  </Text>
-
-                  <ScrollView
-                    style={styles.datePickerScroll}
-                  >
-                    {years.map((year) => (
-                      <TouchableOpacity
-                        key={year}
-                        style={[
-                          styles.datePickerOption,
-                          year === endDate.year &&
-                            styles.datePickerOptionSelected,
-                        ]}
-                        onPress={() =>
-                          updateEndDay(
-                            endDate.day,
-                            endDate.month,
-                            year
-                          )
-                        }
-                      >
-                        <Text
-                          style={[
-                            styles.datePickerOptionText,
-                            year === endDate.year &&
-                              styles.datePickerOptionTextSelected,
-                          ]}
-                        >
-                          {year}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={
-                  styles.datePickerConfirmButton
-                }
-                onPress={() =>
-                  setShowEndPicker(false)
-                }
-              >
-                <Text
-                  style={
-                    styles.datePickerConfirmButtonText
-                  }
-                >
-                  Confirm
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
+        {/* Native Date Picker */}
+        {showPicker && (
+          <DateTimePicker
+            value={pickerType === 'start' ? startDate : endDate}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={handleDateChange}
+          />
+        )}
       </LinearGradient>
-    </View>
+    </SafeAreaView>
   );
 };
 
-export default EditScreen;
+export default function EditScreen() {
+  return (
+    <ErrorBoundary>
+      <EditScreenContent />
+    </ErrorBoundary>
+  );
+}

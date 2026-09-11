@@ -1,106 +1,105 @@
 import React, { useCallback, useState } from 'react';
+
 import {
   ActivityIndicator,
   Alert,
   Modal,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+
+import { SafeAreaView } from 'react-native-safe-area-context';
+
 import { MaterialIcons } from '@expo/vector-icons';
+
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { useAuth } from '../context/AuthContext';
-import API from '../services/api';
 
+import {
+  getCategories,
+  createCategory,
+  updateCategory,
+  deleteCategory,
+} from '../services/categoryService';
+import BottomNav from '../screens/BottomNav';
 const CategoriesScreen = ({ navigation }) => {
   const { token } = useAuth();
-
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  const [modalVisible, setModalVisible] = useState(false);
-  const [editingCategory, setEditingCategory] = useState(null);
-  const [categoryName, setCategoryName] = useState('');
-
   const [saving, setSaving] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [categoryName, setCategoryName] = useState('');
+  const [editingCategory, setEditingCategory] =
+    useState(null);
 
-  // =========================
-  // Get Categories
-  // =========================
+
   const loadCategories = useCallback(async () => {
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
 
     try {
       setLoading(true);
 
-      const response = await API.get('/categories/', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const data = await getCategories(token);
 
-      const data = response.data;
+      let categoriesData = [];
 
-      // Handle different possible API response shapes
       if (Array.isArray(data)) {
-        setCategories(data);
+        categoriesData = data;
       } else if (Array.isArray(data?.categories)) {
-        setCategories(data.categories);
+        categoriesData = data.categories;
       } else if (Array.isArray(data?.items)) {
-        setCategories(data.items);
-      } else {
-        setCategories([]);
+        categoriesData = data.items;
       }
+
+      setCategories(categoriesData);
+
+      console.log(
+        'Categories:',
+        categoriesData
+      );
     } catch (error) {
       console.log(
-        'Load categories error:',
-        error?.response?.data || error.message
+        'Load Categories Error:',
+        error?.response?.data ||
+          error?.message ||
+          error
       );
 
       Alert.alert(
         'Error',
-        error?.response?.data?.detail ||
-          'Could not load categories.'
+        'Failed to load categories.'
       );
     } finally {
       setLoading(false);
     }
   }, [token]);
 
-  // Reload whenever screen gets focus
   useFocusEffect(
     useCallback(() => {
       loadCategories();
     }, [loadCategories])
   );
-
-  // =========================
-  // Open Add Modal
-  // =========================
   const openAddModal = () => {
     setEditingCategory(null);
     setCategoryName('');
     setModalVisible(true);
   };
 
-  // =========================
-  // Open Edit Modal
-  // =========================
   const openEditModal = (category) => {
     setEditingCategory(category);
     setCategoryName(category?.name || '');
     setModalVisible(true);
   };
 
-  // =========================
-  // Close Modal
-  // =========================
   const closeModal = () => {
     if (saving) return;
 
@@ -108,105 +107,113 @@ const CategoriesScreen = ({ navigation }) => {
     setEditingCategory(null);
     setCategoryName('');
   };
-
-  // =========================
-  // Add / Update Category
-  // =========================
   const handleSaveCategory = async () => {
     const name = categoryName.trim();
 
     if (!name) {
-      Alert.alert('Missing name', 'Please enter a category name.');
+      Alert.alert(
+        'Required',
+        'Please enter a category name.'
+      );
       return;
     }
 
     if (!token) {
-      Alert.alert('Error', 'You are not logged in.');
+      Alert.alert(
+        'Error',
+        'You are not authenticated.'
+      );
       return;
     }
 
     try {
       setSaving(true);
 
+
       if (editingCategory) {
-        // =========================
-        // UPDATE
-        // PUT /categories/{id}
-        // =========================
-        const response = await API.put(
-          `/categories/${editingCategory.id}`,
-          {
-            name,
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
+        console.log(
+          'Updating category:',
+          editingCategory.id,
+          name
         );
 
-        const updatedCategory = response.data;
+        const updatedCategory =
+          await updateCategory(
+            token,
+            editingCategory.id,
+            {
+              name,
+            }
+          );
 
         setCategories((prev) =>
           prev.map((category) =>
             category.id === editingCategory.id
               ? {
                   ...category,
-                  ...updatedCategory,
-                  name,
+                  ...(updatedCategory || {}),
+                  name:
+                    updatedCategory?.name ||
+                    name,
                 }
               : category
           )
         );
 
-        Alert.alert('Success', 'Category updated successfully.');
-      } else {
-        // =========================
-        // CREATE
-        // POST /categories/
-        // =========================
-        const response = await API.post(
-          '/categories/',
-          {
-            name,
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
+        closeModal();
+
+        Alert.alert(
+          'Success',
+          'Category updated successfully.'
+        );
+      }
+
+
+      else {
+        console.log(
+          'Creating category:',
+          name
         );
 
-        const newCategory = response.data;
+        const newCategory =
+          await createCategory(
+            token,
+            {
+              name,
+            }
+          );
 
         setCategories((prev) => [
           ...prev,
           newCategory,
         ]);
 
-        Alert.alert('Success', 'Category added successfully.');
-      }
+        closeModal();
 
-      closeModal();
+        Alert.alert(
+          'Success',
+          'Category added successfully.'
+        );
+      }
     } catch (error) {
       console.log(
-        'Save category error:',
-        error?.response?.data || error.message
+        'Save Category Error:',
+        error?.response?.status
+      );
+
+      console.log(
+        'Save Category Data:',
+        error?.response?.data
       );
 
       Alert.alert(
         'Error',
-        error?.response?.data?.detail ||
-          'Could not save category.'
+        'Failed to save category.'
       );
     } finally {
       setSaving(false);
     }
   };
-
-  // =========================
-  // Delete Category
-  // =========================
   const handleDeleteCategory = (category) => {
     Alert.alert(
       'Delete Category',
@@ -216,97 +223,80 @@ const CategoriesScreen = ({ navigation }) => {
           text: 'Cancel',
           style: 'cancel',
         },
+
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => deleteCategory(category.id),
+
+          onPress: async () => {
+            if (!token) {
+              Alert.alert(
+                'Error',
+                'You are not authenticated.'
+              );
+              return;
+            }
+
+            try {
+              console.log(
+                'Deleting category:',
+                category.id
+              );
+
+              await deleteCategory(
+                token,
+                category.id
+              );
+
+              setCategories((prev) =>
+                prev.filter(
+                  (item) =>
+                    item.id !== category.id
+                )
+              );
+
+              Alert.alert(
+                'Success',
+                'Category deleted successfully.'
+              );
+            } catch (error) {
+              console.log(
+                'Delete Category Status:',
+                error?.response?.status
+              );
+
+              console.log(
+                'Delete Category Error:',
+                error?.response?.data ||
+                  error?.message ||
+                  error
+              );
+
+              Alert.alert(
+                'Error',
+                'Failed to delete category.'
+              );
+            }
+          },
         },
       ]
     );
   };
-
-  const deleteCategory = async (categoryId) => {
-    if (!token) {
-      Alert.alert('Error', 'You are not logged in.');
-      return;
-    }
-
-    try {
-      await API.delete(`/categories/${categoryId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      setCategories((prev) =>
-        prev.filter((category) => category.id !== categoryId)
-      );
-
-      Alert.alert('Success', 'Category deleted successfully.');
-    } catch (error) {
-      console.log(
-        'Delete category error:',
-        error?.response?.data || error.message
-      );
-
-      Alert.alert(
-        'Error',
-        error?.response?.data?.detail ||
-          'Could not delete category.'
-      );
-    }
-  };
-
-  // =========================
-  // Loading
-  // =========================
-  if (loading) {
-    return (
-      <LinearGradient
-        colors={['#F8FAFC', '#EEF2FF']}
-        style={styles.container}
-      >
-        <SafeAreaView style={styles.safeArea}>
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#6366F1" />
-            <Text style={styles.loadingText}>
-              Loading categories...
-            </Text>
-          </View>
-        </SafeAreaView>
-      </LinearGradient>
-    );
-  }
-
-  // =========================
-  // UI
-  // =========================
   return (
-    <LinearGradient
-      colors={['#F8FAFC', '#EEF2FF']}
-      style={styles.container}
-    >
-      <SafeAreaView style={styles.safeArea}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Pressable
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <MaterialIcons
-              name="arrow-back"
-              size={24}
-              color="#111827"
-            />
-          </Pressable>
+    <SafeAreaView style={styles.container}>
+      <LinearGradient
+        colors={['#F8FAFF', '#EEF3FF']}
+        style={styles.gradient}
+      >
 
-          <View style={styles.headerTextContainer}>
-            <Text style={styles.headerTitle}>
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.title}>
               Categories
             </Text>
 
-            <Text style={styles.headerSubtitle}>
-              Organize your tasks
+            <Text style={styles.subtitle}>
+              Organize your tasks by category
             </Text>
           </View>
 
@@ -322,105 +312,108 @@ const CategoriesScreen = ({ navigation }) => {
           </Pressable>
         </View>
 
-        {/* Content */}
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.content}
-        >
-          {/* Category Count */}
-          <View style={styles.summaryCard}>
-            <View style={styles.summaryIcon}>
-              <MaterialIcons
-                name="category"
-                size={25}
-                color="#6366F1"
-              />
-            </View>
+        {loading ? (
+          <View style={styles.centerContainer}>
+            <ActivityIndicator
+              size="large"
+              color="#4F46E5"
+            />
 
-            <View>
-              <Text style={styles.summaryNumber}>
-                {categories.length}
-              </Text>
-
-              <Text style={styles.summaryText}>
-                {categories.length === 1
-                  ? 'Category'
-                  : 'Categories'}
-              </Text>
-            </View>
+            <Text style={styles.loadingText}>
+              Loading categories...
+            </Text>
           </View>
+        ) : (
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={
+              styles.scrollContent
+            }
+          >
 
-          {/* Empty State */}
-          {categories.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <View style={styles.emptyIcon}>
-                <MaterialIcons
-                  name="category"
-                  size={48}
-                  color="#A5B4FC"
-                />
-              </View>
+            {categories.length === 0 ? (
+              <View style={styles.emptyContainer}>
 
-              <Text style={styles.emptyTitle}>
-                No Categories Yet
-              </Text>
+                <View style={styles.emptyIcon}>
+                  <MaterialIcons
+                    name="category"
+                    size={42}
+                    color="#4F46E5"
+                  />
+                </View>
 
-              <Text style={styles.emptyText}>
-                Create your first category to organize
-                your tasks.
-              </Text>
-
-              <Pressable
-                style={styles.emptyButton}
-                onPress={openAddModal}
-              >
-                <MaterialIcons
-                  name="add"
-                  size={20}
-                  color="#FFFFFF"
-                />
-
-                <Text style={styles.emptyButtonText}>
-                  Add Category
+                <Text style={styles.emptyTitle}>
+                  No Categories Yet
                 </Text>
-              </Pressable>
-            </View>
-          ) : (
-            <View style={styles.list}>
-              {categories.map((category, index) => (
+
+                <Text style={styles.emptyText}>
+                  Create your first category to
+                  organize your tasks.
+                </Text>
+
+                <Pressable
+                  style={styles.emptyButton}
+                  onPress={openAddModal}
+                >
+                  <MaterialIcons
+                    name="add"
+                    size={20}
+                    color="#FFFFFF"
+                  />
+
+                  <Text
+                    style={styles.emptyButtonText}
+                  >
+                    Add Category
+                  </Text>
+                </Pressable>
+
+              </View>
+            ) : (
+              categories.map((category, index) => (
+
                 <View
                   key={
-                    category.id?.toString() ||
-                    index.toString()
+                    category.id ??
+                    `category-${index}`
                   }
                   style={styles.categoryCard}
                 >
-                  {/* Left */}
-                  <View style={styles.categoryLeft}>
-                    <View style={styles.categoryIcon}>
-                      <MaterialIcons
-                        name="folder"
-                        size={24}
-                        color="#6366F1"
-                      />
-                    </View>
 
-                    <View style={styles.categoryInfo}>
-                      <Text
-                        style={styles.categoryName}
-                        numberOfLines={1}
-                      >
-                        {category.name || 'Unnamed Category'}
-                      </Text>
+                  {/* ICON */}
 
-                      <Text style={styles.categoryId}>
-                        Category #{category.id}
-                      </Text>
-                    </View>
+                  <View style={styles.categoryIcon}>
+                    <MaterialIcons
+                      name="folder"
+                      size={25}
+                      color="#4F46E5"
+                    />
                   </View>
 
-                  {/* Actions */}
+                  {/* NAME */}
+
+                  <View style={styles.categoryInfo}>
+
+                    <Text
+                      style={styles.categoryName}
+                      numberOfLines={1}
+                    >
+                      {category.name ||
+                        'Unnamed Category'}
+                    </Text>
+
+                    <Text
+                      style={styles.categoryId}
+                    >
+                      Category #{category.id}
+                    </Text>
+
+                  </View>
+
+                  {/* ACTIONS */}
+
                   <View style={styles.actions}>
+
                     <Pressable
                       style={styles.actionButton}
                       onPress={() =>
@@ -430,33 +423,38 @@ const CategoriesScreen = ({ navigation }) => {
                       <MaterialIcons
                         name="edit"
                         size={20}
-                        color="#6366F1"
+                        color="#4F46E5"
                       />
                     </Pressable>
 
                     <Pressable
                       style={[
                         styles.actionButton,
-                        styles.deleteAction,
+                        styles.deleteButton,
                       ]}
                       onPress={() =>
-                        handleDeleteCategory(category)
+                        handleDeleteCategory(
+                          category
+                        )
                       }
                     >
                       <MaterialIcons
                         name="delete-outline"
-                        size={20}
+                        size={21}
                         color="#EF4444"
                       />
                     </Pressable>
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
-        </ScrollView>
 
-        {/* Add / Edit Modal */}
+                  </View>
+
+                </View>
+
+              ))
+            )}
+
+          </ScrollView>
+        )}
+
         <Modal
           visible={modalVisible}
           transparent
@@ -464,77 +462,88 @@ const CategoriesScreen = ({ navigation }) => {
           onRequestClose={closeModal}
         >
           <View style={styles.modalOverlay}>
+
             <View style={styles.modalContainer}>
-              {/* Modal Header */}
+
+              {/* MODAL HEADER */}
+
               <View style={styles.modalHeader}>
+
                 <View>
+
                   <Text style={styles.modalTitle}>
                     {editingCategory
                       ? 'Edit Category'
                       : 'Add Category'}
                   </Text>
 
-                  <Text style={styles.modalSubtitle}>
+                  <Text
+                    style={styles.modalSubtitle}
+                  >
                     {editingCategory
                       ? 'Update category name'
                       : 'Create a new category'}
                   </Text>
+
                 </View>
 
                 <Pressable
-                  style={styles.closeButton}
                   onPress={closeModal}
                   disabled={saving}
+                  style={styles.closeButton}
                 >
                   <MaterialIcons
                     name="close"
                     size={23}
-                    color="#6B7280"
+                    color="#64748B"
                   />
                 </Pressable>
+
               </View>
 
-              {/* Input */}
+              {/* INPUT */}
+
               <Text style={styles.inputLabel}>
                 Category Name
               </Text>
 
-              <View style={styles.inputContainer}>
-                <MaterialIcons
-                  name="folder-open"
-                  size={21}
-                  color="#9CA3AF"
-                />
+              <TextInput
+                value={categoryName}
+                onChangeText={setCategoryName}
+                placeholder="Enter category name"
+                placeholderTextColor="#94A3B8"
+                style={styles.input}
+                autoFocus
+                editable={!saving}
+                maxLength={50}
+              />
 
-                <TextInput
-                  value={categoryName}
-                  onChangeText={setCategoryName}
-                  placeholder="e.g. Study"
-                  placeholderTextColor="#9CA3AF"
-                  style={styles.input}
-                  autoFocus
-                  editable={!saving}
-                  maxLength={50}
-                />
-              </View>
+              {/* BUTTONS */}
 
-              {/* Buttons */}
-              <View style={styles.modalButtons}>
+              <View style={styles.modalActions}>
+
                 <Pressable
                   style={styles.cancelButton}
                   onPress={closeModal}
                   disabled={saving}
                 >
-                  <Text style={styles.cancelButtonText}>
+                  <Text
+                    style={styles.cancelButtonText}
+                  >
                     Cancel
                   </Text>
                 </Pressable>
 
                 <Pressable
-                  style={styles.saveButton}
+                  style={[
+                    styles.saveButton,
+                    saving &&
+                      styles.disabledButton,
+                  ]}
                   onPress={handleSaveCategory}
                   disabled={saving}
                 >
+
                   {saving ? (
                     <ActivityIndicator
                       size="small"
@@ -545,14 +554,16 @@ const CategoriesScreen = ({ navigation }) => {
                       <MaterialIcons
                         name={
                           editingCategory
-                            ? 'check'
+                            ? 'save'
                             : 'add'
                         }
                         size={20}
                         color="#FFFFFF"
                       />
 
-                      <Text style={styles.saveButtonText}>
+                      <Text
+                        style={styles.saveButtonText}
+                      >
                         {editingCategory
                           ? 'Update'
                           : 'Add'}
@@ -564,173 +575,164 @@ const CategoriesScreen = ({ navigation }) => {
             </View>
           </View>
         </Modal>
-      </SafeAreaView>
-    </LinearGradient>
+
+        <BottomNav
+          navigation={navigation}
+          activeScreen="CategoryScreen"
+        />
+
+      </LinearGradient>
+    </SafeAreaView>
   );
 };
 
 export default CategoriesScreen;
 
-// =====================================================
-// Styles
-// =====================================================
 
 const styles = StyleSheet.create({
+
   container: {
     flex: 1,
+    backgroundColor: '#F8FAFF',
   },
 
-  safeArea: {
+  gradient: {
     flex: 1,
   },
 
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  loadingText: {
-    marginTop: 12,
-    fontSize: 15,
-    color: '#6B7280',
-  },
-
-  // =========================
-  // Header
-  // =========================
 
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 18,
+    paddingTop: 18,
+    paddingBottom: 15,
   },
 
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-  },
-
-  headerTextContainer: {
-    flex: 1,
-  },
-
-  headerTitle: {
-    fontSize: 25,
+  title: {
+    fontSize: 28,
     fontWeight: '800',
     color: '#111827',
   },
 
-  headerSubtitle: {
-    marginTop: 3,
-    fontSize: 13,
-    color: '#6B7280',
+  subtitle: {
+    marginTop: 4,
+    fontSize: 14,
+    color: '#64748B',
   },
 
   addButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: '#6366F1',
+    width: 48,
+    height: 48,
+    borderRadius: 15,
+    backgroundColor: '#4F46E5',
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 3,
-    shadowColor: '#6366F1',
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
+
+    shadowColor: '#4F46E5',
     shadowOffset: {
       width: 0,
-      height: 3,
+      height: 5,
     },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
   },
 
-  // =========================
-  // Content
-  // =========================
-
-  content: {
+  scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 40,
+    paddingTop: 8,
+    paddingBottom: 120,
   },
 
-  summaryCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 18,
+  centerContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#64748B',
+  },
+
+  categoryCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 15,
+    marginBottom: 12,
+
+    shadowColor: '#000000',
     shadowOffset: {
       width: 0,
       height: 3,
     },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
 
-  summaryIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
+  categoryIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     backgroundColor: '#EEF2FF',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 14,
+    marginRight: 13,
   },
 
-  summaryNumber: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#111827',
+  categoryInfo: {
+    flex: 1,
+    paddingRight: 8,
   },
 
-  summaryText: {
-    marginTop: 2,
-    fontSize: 13,
-    color: '#6B7280',
+  categoryName: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1E293B',
   },
 
-  // =========================
-  // Empty
-  // =========================
+  categoryId: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#94A3B8',
+  },
+
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+
+  actionButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 11,
+    backgroundColor: '#EEF2FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  deleteButton: {
+    backgroundColor: '#FEF2F2',
+  },
 
   emptyContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    paddingHorizontal: 25,
-    paddingVertical: 45,
     alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
+    justifyContent: 'center',
+    paddingHorizontal: 25,
+    paddingTop: 80,
   },
 
   emptyIcon: {
-    width: 90,
-    height: 90,
-    borderRadius: 30,
+    width: 82,
+    height: 82,
+    borderRadius: 25,
     backgroundColor: '#EEF2FF',
     alignItems: 'center',
     justifyContent: 'center',
@@ -740,119 +742,39 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 21,
     fontWeight: '800',
-    color: '#111827',
+    color: '#1E293B',
+    marginBottom: 8,
   },
 
   emptyText: {
-    marginTop: 8,
-    textAlign: 'center',
     fontSize: 14,
     lineHeight: 21,
-    color: '#6B7280',
-    maxWidth: 280,
+    textAlign: 'center',
+    color: '#64748B',
+    maxWidth: 300,
   },
 
   emptyButton: {
-    marginTop: 22,
-    backgroundColor: '#6366F1',
-    paddingHorizontal: 20,
-    paddingVertical: 13,
-    borderRadius: 14,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4F46E5',
+    paddingHorizontal: 20,
+    height: 46,
+    borderRadius: 14,
+    marginTop: 22,
+    gap: 7,
   },
 
   emptyButtonText: {
-    marginLeft: 7,
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
   },
 
-  // =========================
-  // Category Cards
-  // =========================
-
-  list: {
-    gap: 12,
-  },
-
-  categoryCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 15,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 7,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-  },
-
-  categoryLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  categoryIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 15,
-    backgroundColor: '#EEF2FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 13,
-  },
-
-  categoryInfo: {
-    flex: 1,
-  },
-
-  categoryName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-  },
-
-  categoryId: {
-    marginTop: 4,
-    fontSize: 12,
-    color: '#9CA3AF',
-  },
-
-  actions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 10,
-  },
-
-  actionButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: '#EEF2FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 7,
-  },
-
-  deleteAction: {
-    backgroundColor: '#FEF2F2',
-  },
-
-  // =========================
-  // Modal
-  // =========================
-
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
     justifyContent: 'center',
     paddingHorizontal: 20,
   },
@@ -873,20 +795,20 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 21,
     fontWeight: '800',
-    color: '#111827',
+    color: '#1E293B',
   },
 
   modalSubtitle: {
-    marginTop: 4,
+    marginTop: 5,
     fontSize: 13,
-    color: '#6B7280',
+    color: '#64748B',
   },
 
   closeButton: {
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -894,39 +816,32 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#374151',
+    color: '#334155',
     marginBottom: 8,
   },
 
-  inputContainer: {
-    height: 54,
-    borderRadius: 14,
-    backgroundColor: '#F9FAFB',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-  },
-
   input: {
-    flex: 1,
-    marginLeft: 10,
+    height: 52,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    paddingHorizontal: 15,
     fontSize: 15,
-    color: '#111827',
+    color: '#1E293B',
+    backgroundColor: '#F8FAFC',
   },
 
-  modalButtons: {
+  modalActions: {
     flexDirection: 'row',
-    marginTop: 25,
     gap: 10,
+    marginTop: 22,
   },
 
   cancelButton: {
     flex: 1,
     height: 50,
     borderRadius: 14,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -934,23 +849,28 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#4B5563',
+    color: '#475569',
   },
 
   saveButton: {
     flex: 1,
     height: 50,
     borderRadius: 14,
-    backgroundColor: '#6366F1',
+    backgroundColor: '#4F46E5',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    flexDirection: 'row',
+    gap: 7,
   },
 
   saveButtonText: {
-    marginLeft: 7,
     fontSize: 14,
     fontWeight: '700',
     color: '#FFFFFF',
   },
+
+  disabledButton: {
+    opacity: 0.6,
+  },
+
 });
